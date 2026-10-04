@@ -23,10 +23,10 @@ function orderCards(rows,editable=false){
  return rows.map(o=>{
    const warehouseForm=(['admin','brigadier'].includes(state.user.role)&&['queued','active'].includes(o.status))
     ? '<form class="warehouseAssignForm card" data-id="'+o.id+'"><strong>Выдать со склада в заказ</strong><div class="row"><label>Типоразмер<select name="productId">'+
-      (o.items||[]).map(i=>'<option value="'+i.product_id+'">'+(i.length_mm/1000)+' м · '+i.remaining+' шт. осталось</option>').join('')+
+      (o.items||[]).map(i=>'<option value="'+(i.productId||i.product_id)+'">'+((i.lengthMm||i.length_mm)/1000)+' м · '+i.remaining+' шт. осталось</option>').join('')+
       '</select></label><label>Количество<input name="quantity" type="number" min="1" step="1" required></label><button>Выдать со склада</button></div></form>' : '';
    return '<div class="card '+(o.priority>0?'priority':'')+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
-     ((o.items||[]).map(i=>'<p>'+(i.length_mm/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
+     ((o.items||[]).map(i=>'<p>'+((i.lengthMm||i.length_mm)/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
      (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
      (state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+
