@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan, REQUIRED_TABLES, RESTORE_ORDER } = require('../src/backup');
+const { validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan, remapUserReferences, REQUIRED_TABLES, RESTORE_ORDER } = require('../src/backup');
 
 
 function validBackup() {
@@ -101,4 +101,11 @@ test('restore plan blocks when a preserved user points to a worker absent from b
   const plan = buildRestorePlan(backup,[{id:'current',username:'admin',worker_id:'missing-worker'}]);
   assert.equal(plan.currentUsersWithMissingWorkers.length,1);
   assert.equal(plan.safeToRestore,false);
+});
+
+
+test('restore remaps user foreign keys to preserved local accounts', () => {
+  const row = remapUserReferences('orders', {id:'o1',created_by:'old-admin',title:'x'}, {'old-admin':'new-admin'});
+  assert.equal(row.created_by,'new-admin');
+  assert.throws(() => remapUserReferences('orders', {created_by:'missing'}, {}), /сопоставить пользователя/);
 });
