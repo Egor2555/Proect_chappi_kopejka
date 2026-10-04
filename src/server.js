@@ -171,7 +171,7 @@ app.post('/api/auth/login', asyncRoute(async (req,res) => {
       return res.status(401).json({error:'Профиль бригадира не настроен. Обратитесь к администратору.'});
     }
   }
-  await pool.query('UPDATE users SET pin_failed_attempts=0,pin_locked=false WHERE id=$1',[user.id]);
+  await pool.query("UPDATE users SET pin_failed_attempts=0,pin_locked=false,last_activity_at=CASE WHEN role IN ('admin','brigadier') THEN now() ELSE last_activity_at END WHERE id=$1",[user.id]);
   await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,true)',[user.id,profile]);
   const token = jwt.sign({ sub:user.id, username:user.username, role:user.role, workerId:user.worker_id }, JWT_SECRET, { expiresIn:'12h' });
   res.json({token,user:{id:user.id,username:user.username,role:user.role,workerId:user.worker_id}});
