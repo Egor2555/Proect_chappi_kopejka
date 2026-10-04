@@ -190,7 +190,7 @@ app.post('/api/auth/recovery/request', recoveryRequestLimiter, asyncRoute(async 
 app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async (req,res) => {
   const code=String(req.body.code||'').trim();
   const newPin=String(req.body.newPin||'');
-  if(!/^\\d{8}$/.test(code)) return res.status(400).json({error:'Введите восьмизначный код из письма.'});
+  if(!/^\d{8}$/.test(code)) return res.status(400).json({error:'Введите восьмизначный код из письма.'});
   if(!validPin(newPin)) return res.status(400).json({error:'Новый PIN должен содержать от 4 до 8 цифр.'});
   const codeHash=crypto.createHash('sha256').update(code).digest('hex');
   const result=await tx(async c=>{
