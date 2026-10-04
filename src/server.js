@@ -608,7 +608,7 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     for(const orderId of affectedOrders) {
       const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
         COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
-      if(missing>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1",[orderId]);
+      if(missing>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status IN ('queued','active') AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active' AND id<>$1)",[orderId]);
     }
     const updated=(await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1 RETURNING *',[entry.id,reason])).rows[0];
     await audit(c,req.user.sub,'void','production_entry',entry.id,entry,updated,reason);
