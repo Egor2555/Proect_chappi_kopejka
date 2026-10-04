@@ -158,7 +158,7 @@ async function shipments(){
  const payments=state.user.role==='admin'?await api('/payments'):[];
  const canShip=['admin','brigadier'].includes(state.user.role);
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.lengthM/1000)+' м × '+i.quantity).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.length_m)+' м × '+i.quantity).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отгрузки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отгрузок пока нет.</p>')+'</div>'+
  (canShip?'<div class="card"><h2>Новая отгрузка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><div class="row shipmentItem"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="quantity" type="number" min="1" required></label></div></div><button type="button" id="shipAll">Отгрузить всё по выбранному заказу</button><button type="button" id="addShipmentItem">+ Добавить позицию</button><button type="submit">Зафиксировать отгрузку</button></form></div>':'')+
  (state.user.role==='admin'?'<div class="card"><h2>Зачесть оплату по отгрузке</h2><form id="paymentForm"><label>Отгрузка<select name="shipmentId">'+rows.map(x=>'<option value="'+x.id+'">'+escapeHtml(x.shipment_number)+'</option>').join('')+'</select></label><label>Сумма, грн<input name="amount" type="number" min="0" step="0.01" required></label><label>Примечание<input name="note"></label><button>Зачесть оплату</button></form><h3>История оплат</h3>'+simpleTable(payments.map(p=>({...p,amount:money(p.amount_minor)})),[['shipment_number','Отгрузка'],['amount','Сумма'],['credited_at','Дата']])+'</div>':'');
@@ -177,7 +177,7 @@ async function shipments(){
      itemsBox.replaceChildren();
      (order.items||[]).filter(i=>Number(i.remaining)>0).forEach(i=>{
        const row=document.createElement('div');row.className='row shipmentItem';
-       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+i.productId+'">'+((i.lengthM)/1000)+' м</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+i.remaining+'" value="'+i.remaining+'" required></label>';
+       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+i.productId+'">'+(i.length_m)+' м</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+i.remaining+'" value="'+i.remaining+'" required></label>';
        itemsBox.append(row);
      });
      if(!itemsBox.children.length)notify('По этому заказу нечего отгружать','error');else notify('Подставлены все остатки заказа');
