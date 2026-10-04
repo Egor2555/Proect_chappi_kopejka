@@ -117,7 +117,7 @@ app.post('/api/users', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {username,password,role,workerId=null}=req.body;
   if(!username||!password||String(password).length<10||!['worker','brigadier','admin'].includes(role))
     return res.status(400).json({error:'Логин, пароль от 10 символов и допустимая роль обязательны'});
-  if(role==='worker'&&!workerId) return res.status(400).json({error:'Для учётной записи работника выберите карточку работника'});
+  if(['worker','brigadier'].includes(role)&&!workerId) return res.status(400).json({error:'Для учётной записи работника выберите карточку работника'});
   const hash=await bcrypt.hash(String(password),12);
   const r=await pool.query('INSERT INTO users(username,password_hash,role,worker_id) VALUES($1,$2,$3,$4) RETURNING id,username,role,worker_id,active',
     [String(username).trim(),hash,role,workerId]);
@@ -130,7 +130,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   const {workerId,teamId,validFrom}=req.body;
   if(!workerId||!teamId||!validFrom) return res.status(400).json({error:'Выберите работника, бригаду и дату'});
   const result=await tx(async c=>{
-    await c.query('UPDATE team_memberships SET valid_to=$1 WHERE worker_id=$2 AND valid_to IS NULL',[validFrom,workerId]);
+    await c.query('UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL',[validFrom,workerId]);
     return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,teamId,validFrom])).rows[0];
   });
   res.status(201).json(result);
