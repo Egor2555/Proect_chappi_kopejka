@@ -103,7 +103,7 @@ async function audit(client, actor, action, type, id, beforeData, afterData, rea
   );
 }
 async function auth(req, res, next) {
-  const token = (req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   try {
     if (!token) throw new Error('missing');
     req.user = jwt.verify(token, JWT_SECRET);
