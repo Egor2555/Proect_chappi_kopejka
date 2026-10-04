@@ -326,14 +326,14 @@ app.post('/api/admin/access/:role/unlock', auth, roles('admin'), asyncRoute(asyn
 
 app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
   const [today, stock, queue] = await Promise.all([
-    pool.query(`SELECT p.length_mm, SUM(e.quantity)::int AS quantity
+    pool.query(`SELECT p.length_mm / 1000.0 AS length_m, SUM(e.quantity)::int AS quantity
       FROM production_entries e JOIN products p ON p.id=e.product_id
       WHERE e.work_date=CURRENT_DATE AND e.voided_at IS NULL GROUP BY p.length_mm ORDER BY p.length_mm`),
-    pool.query(`SELECT p.id,p.length_mm,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
+    pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
       FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
       WHERE p.active=true GROUP BY p.id ORDER BY p.length_mm`),
     pool.query(`SELECT o.id,o.order_number,o.title,o.priority,o.status,o.created_at,
-      COALESCE(json_agg(json_build_object('length_mm',p.length_mm,'required',i.required_qty,
+      COALESCE(json_agg(json_build_object('length_m',p.length_mm / 1000.0,'required',i.required_qty,
         'done',COALESCE(done.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(done.qty,0),0))
         ORDER BY p.length_mm),'[]'::json) AS items
       FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
@@ -346,14 +346,14 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
 }));
 
 app.get('/api/products', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query('SELECT * FROM products ORDER BY length_mm');
+  const r=await pool.query('SELECT *, length_mm / 1000.0 AS length_m FROM products ORDER BY length_mm');
   res.json(r.rows);
 }));
 app.post('/api/products', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {code,lengthMm,sectionWidthMm=60,sectionHeightMm=40}=req.body;
-  if (!code || !Number.isInteger(Number(lengthMm)) || Number(lengthMm)<=0) return res.status(400).json({error:'Проверьте код и длину'});
+  const {code,lengthM,sectionWidthMm=60,sectionHeightMm=40}=req.body;
+  const lengthMeters=Number(lengthM); const lengthMm=Math.round(lengthMeters*1000); if (!code || !Number.isFinite(lengthMeters) || lengthMeters<=0 || lengthMm<=0) return res.status(400).json({error:'Проверьте код и длину в метрах'});
   const r=await pool.query('INSERT INTO products(code,length_mm,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4) RETURNING *',
-    [code,Number(lengthMm),Number(sectionWidthMm),Number(sectionHeightMm)]);
+    [code,lengthMm,Number(sectionWidthMm),Number(sectionHeightMm)]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','product',$2,$3)",[req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
   res.status(201).json(r.rows[0]);
 }));
@@ -493,7 +493,7 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
 }));
 
 app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT r.*,p.length_mm,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
+  const r=await pool.query(`SELECT r.*,p.length_mm / 1000.0 AS length_m,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
   res.json(r.rows);
 }));
 
@@ -515,7 +515,7 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {
 }));
 
 app.get('/api/orders', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT o.*,COALESCE(json_agg(json_build_object('productId',i.product_id,'lengthMm',p.length_mm,'required',i.required_qty,
+  const r=await pool.query(`SELECT o.*,COALESCE(json_agg(json_build_object('productId',i.product_id,'length_m',p.length_mm / 1000.0,'required',i.required_qty,
     'done',COALESCE(d.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(d.qty,0),0)) ORDER BY p.length_mm),'[]') AS items
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
     LEFT JOIN LATERAL(SELECT SUM(a.quantity)::int qty FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL)d ON true
@@ -681,7 +681,7 @@ app.get('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (r
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const params=[date];
   const teamFilter=' AND e.team_id=(SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1)';
-  const r=await pool.query(`SELECT e.*,p.length_mm,p.section_width_mm,p.section_height_mm,t.name team_name,o.order_number,u.username created_by_name
+  const r=await pool.query(`SELECT e.*,p.length_mm / 1000.0 AS length_m,p.section_width_mm,p.section_height_mm,t.name team_name,o.order_number,u.username created_by_name
     FROM production_entries e JOIN products p ON p.id=e.product_id JOIN teams t ON t.id=e.team_id
     LEFT JOIN orders o ON o.id=e.order_id JOIN users u ON u.id=e.created_by
     WHERE e.work_date=$1 AND e.voided_at IS NULL `+teamFilter+` ORDER BY e.created_at DESC`,params);
@@ -730,7 +730,7 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
 }));
 
 app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT p.id,p.code,p.length_mm,COALESCE(SUM(m.quantity_delta),0)::int quantity
+  const r=await pool.query(`SELECT p.id,p.code,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int quantity
     FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
     GROUP BY p.id ORDER BY p.length_mm`);
   res.json(r.rows);
@@ -802,7 +802,7 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
 }));
 
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('lengthMm',p.length_mm,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
+  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('length_m',p.length_mm / 1000.0,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
     FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
     GROUP BY s.id ORDER BY s.shipped_at DESC LIMIT 200`);
   res.json(r.rows);
@@ -962,7 +962,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
-  const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(DISTINCT pe.id)::int entries,
+  const r=await pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
     COALESCE(SUM(sa.quantity),0)::int quantity,
     r.amount_minor::text rate_minor,
     CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
@@ -975,7 +975,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
     GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
-  const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_mm);
+  const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_m);
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
   let earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
@@ -1072,7 +1072,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
       GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
     const produced=items.filter(x=>Number(x.quantity)>0);
-    const missing=produced.filter(x=>x.rate_minor===null).map(x=>(Number(x.length_mm)/1000)+' м');
+    const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_m+' м');
     if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name) ORDER BY w.display_name) workers
@@ -1281,10 +1281,10 @@ app.use((err,_req,res,_next) => {
 async function start() {
   const schema=fs.readFileSync(path.join(__dirname,'../db/schema.sql'),'utf8');
   await pool.query(schema);
-  const standardLengths=[1500,1700,2000,2250,2500,3000];
+  const standardLengths=[1.5,1.7,2,2.25,2.5,3];
   for (const length of standardLengths) {
     await pool.query(`INSERT INTO products(code,length_mm) VALUES($1,$2) ON CONFLICT(code) DO NOTHING`,
-      [`60x40-${length}`,length]);
+      [`60x40-${String(Math.round(length*1000))}`,Math.round(length*1000)]);
   }
   await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
   await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
