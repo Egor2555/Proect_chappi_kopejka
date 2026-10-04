@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS orders (
     CHECK (status IN ('queued','active','completed','archived','cancelled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  cancel_reason TEXT,
   created_by UUID REFERENCES users(id) ON DELETE RESTRICT
 );
 
