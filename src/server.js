@@ -329,14 +329,22 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     if(!entry||entry.voided_at) throw new Error('Запись не найдена или уже отменена');
     const month=String(entry.work_date).slice(0,7)+'-01';
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Закрытый месяц нельзя исправлять обычной операцией');
+    const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id])).rows.map(x=>x.order_id);
     const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[entry.id])).rows;
     for(const movement of movements) {
       const reverse=-Number(movement.quantity_delta);
+      const current=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[movement.product_id])).rows[0].qty);
+      if(current+reverse<0) throw new Error('Нельзя отменить запись: часть этой продукции уже отгружена, склад станет отрицательным');
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
         VALUES($1,$2,$3,$4,$5,$6,$7)`,
         [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,entry.id,movement.order_id,req.user.sub,'Сторно записи: '+reason]);
     }
     await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id]);
+    for(const orderId of affectedOrders) {
+      const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
+      if(missing>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1",[orderId]);
+    }
     const updated=(await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1 RETURNING *',[entry.id,reason])).rows[0];
     await audit(c,req.user.sub,'void','production_entry',entry.id,entry,updated,reason);
     return updated;
