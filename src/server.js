@@ -910,7 +910,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     if(residualMinor>0n){
       await c.query(`INSERT INTO penny_events(period_month,source_minor,distributed_minor,allocation,algorithm_version,created_by,status)
         VALUES($1,$2,$3,$4,$5,$6,'approved')`,
-        [start,happyKopeck.amountMinor,happyKopeck.amountMinor,JSON.stringify({winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}), 'admin-selected-v1', req.user.sub]);
+        [start,happyKopeck.amountMinor,happyKopeck.amountMinor,JSON.stringify({winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}), 'random-crypto-v1', req.user.sub]);
     }
     const workerTotals=new Map(calculation.earnings.map(x=>[x.workerId,BigInt(x.amountMinor)]));
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
