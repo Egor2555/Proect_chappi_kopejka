@@ -1,13 +1,18 @@
+const { randomInt } = require('node:crypto');
+
 // Здесь родилась Счастливая копейка от Чаппи 🪙🏆
 
-// The historic random residual-kopeck rule is intentionally not enabled.
-// No distribution can be approved until its source amount, eligible recipients,
-// allocation limits and reproducibility rules are confirmed from the original
-// project archive. Never silently alter earned wages or round them away.
-function simulateHappyKopeck() {
-  const error = new Error('Алгоритм Счастливой копейки ещё не утверждён');
-  error.code = 'PENNY_ALGORITHM_NOT_APPROVED';
-  throw error;
+// No manual winner selection. At month close the residual goes to one
+// randomly selected eligible worker. Persist the result once; reading a
+// closed month must never draw again. No residual means no winner.
+function chooseHappyKopeckWinner(residualMinor, eligibleWorkerIds, random = randomInt) {
+  const amount = BigInt(residualMinor);
+  if (amount < 0n) throw new RangeError('Residual amount cannot be negative');
+  if (amount === 0n) return { amountMinor: '0', winnerId: null, badge: null };
+  if (!Array.isArray(eligibleWorkerIds) || eligibleWorkerIds.length === 0)
+    throw new Error('No eligible workers for Happy Kopeck');
+  const index = random(0, eligibleWorkerIds.length);
+  return { amountMinor: amount.toString(), winnerId: eligibleWorkerIds[index], badge: '🏆' };
 }
 
-module.exports = { simulateHappyKopeck };
+module.exports = { chooseHappyKopeckWinner };
