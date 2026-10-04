@@ -30,3 +30,25 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run check
+
+      - name: Start server and run end-to-end smoke test
+        env:
+          PORT: 8080
+          INITIAL_ADMIN_USERNAME: admin
+          INITIAL_ADMIN_PASSWORD: SmokeTestAdminPassword123
+          JWT_SECRET: ci-only-secret-that-is-long-and-random-enough
+        run: |
+          npm start > /tmp/chappi-server.log 2>&1 &
+          SERVER_PID=$!
+          for attempt in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:8080/api/health; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl --silent --fail http://127.0.0.1:8080/api/health; then
+            cat /tmp/chappi-server.log
+            exit 1
+          fi
+          BASE_URL=http://127.0.0.1:8080 INITIAL_ADMIN_USERNAME=admin INITIAL_ADMIN_PASSWORD=SmokeTestAdminPassword123 node tests/smoke.js
+          kill $SERVER_PID
