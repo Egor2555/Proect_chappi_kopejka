@@ -498,6 +498,12 @@ app.get('/api/archive/months', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
+app.post('/api/admin/mode-event', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const r=await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'admin_mode_open','system','admin-mode',$2) RETURNING id,created_at",
+    [req.user.sub,JSON.stringify({source:'admin-panel'})]);
+  res.status(201).json(r.rows[0]);
+}));
+
 app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT a.id,u.username,a.action,a.entity_type,a.entity_id,a.before_data,a.after_data,a.reason,a.created_at
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 500`);
