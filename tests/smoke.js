@@ -19,7 +19,7 @@ async function must(path, options, expected=200) {
 }
 (async()=>{
   await must('/api/health');
-  const adminLogin=await must('/api/auth/login',{method:'POST',body:{username:process.env.INITIAL_ADMIN_USERNAME||'admin',password:process.env.INITIAL_ADMIN_PASSWORD}});
+  const adminLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:String(2500+5)}});
   const admin=adminLogin.token;
   await must('/api/dashboard',{token:admin});
   const products=await must('/api/products',{token:admin});
@@ -40,7 +40,6 @@ async function must(path, options, expected=200) {
   const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
   const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
-  await must('/api/users',{token:admin,method:'POST',body:{username:'ci-worker',password:'TestWorkerPassword123',role:'worker',workerId:worker.id}},201);
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
@@ -103,7 +102,7 @@ async function must(path, options, expected=200) {
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
-  const workerLogin=await must('/api/auth/login',{method:'POST',body:{username:'ci-worker',password:'TestWorkerPassword123'}});
+  const workerLogin=await must('/api/auth/login',{method:'POST',body:{profile:'worker'}});
   const denied=await request('/api/admin/login-log',{token:workerLogin.token});
   assert.equal(denied.status,403);
   const deniedProduction=await request('/api/production?date='+today,{token:workerLogin.token});
