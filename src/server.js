@@ -201,6 +201,20 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   res.status(201).json(result);
 }));
 
+app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
+  const teamId=String(req.query.teamId||'');
+  const date=String(req.query.date||'');
+  if(!teamId||!/\\d{4}-\\d{2}-\\d{2}/.test(date)) return res.status(400).json({error:'Укажите бригаду и дату'});
+  if(req.user.role==='brigadier' && !(await pool.query(
+    'SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
+    [req.user.workerId,teamId,date])).rowCount) return res.status(403).json({error:'Можно просматривать только свою бригаду'});
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active
+    FROM workers w JOIN team_memberships m ON m.worker_id=w.id
+    WHERE m.team_id=$1 AND m.valid_from<=$2 AND (m.valid_to IS NULL OR m.valid_to>=$2)
+    ORDER BY w.display_name`,[teamId,date]);
+  res.json(r.rows);
+}));
+
 app.get('/api/attendance', auth, asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
