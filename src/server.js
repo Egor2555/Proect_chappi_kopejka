@@ -870,9 +870,21 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
       JOIN rates r ON r.product_id=si.product_id AND r.period_month=$1::date
       GROUP BY pe.work_date,pe.team_id`,[start]);
-    const dayAttendance=await pool.query(`SELECT work_date,team_id,COUNT(*)::int worker_count
-      FROM attendance_entries WHERE work_date >= $1::date AND work_date < ($1::date + INTERVAL '1 month')
-      GROUP BY work_date,team_id`,[start]);
+    const dayAttendance=await pool.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count
+      FROM attendance_entries a
+      WHERE EXISTS (
+        SELECT 1 FROM shipment_items si
+        JOIN shipments s ON s.id=si.shipment_id
+          AND s.shipped_at >= $1::date
+          AND s.shipped_at < ($1::date + INTERVAL '1 month')
+        JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+        JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+        JOIN production_entries pe ON pe.id=im.production_entry_id
+          AND pe.voided_at IS NULL
+          AND pe.work_date=a.work_date
+          AND pe.team_id=a.team_id
+      )
+      GROUP BY a.work_date,a.team_id`,[start]);
     const attendanceCounts=new Map(dayAttendance.rows.map(x=>[String(x.work_date)+'|'+x.team_id,Number(x.worker_count)]));
     for(const d of dayRows.rows){ const n=attendanceCounts.get(String(d.work_date)+'|'+d.team_id)||0; if(n>0) residualMinor += BigInt(d.total_minor)%BigInt(n); }
   }
