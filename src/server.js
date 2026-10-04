@@ -113,6 +113,38 @@ app.post('/api/workers', auth, roles('admin'), asyncRoute(async (req,res) => {
   res.status(201).json(r.rows[0]);
 }));
 
+app.post('/api/users', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const {username,password,role,workerId=null}=req.body;
+  if(!username||!password||String(password).length<10||!['worker','brigadier','admin'].includes(role))
+    return res.status(400).json({error:'Логин, пароль от 10 символов и допустимая роль обязательны'});
+  if(role==='worker'&&!workerId) return res.status(400).json({error:'Для учётной записи работника выберите карточку работника'});
+  const hash=await bcrypt.hash(String(password),12);
+  const r=await pool.query('INSERT INTO users(username,password_hash,role,worker_id) VALUES($1,$2,$3,$4) RETURNING id,username,role,worker_id,active',
+    [String(username).trim(),hash,role,workerId]);
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','user',$2,$3)",
+    [req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
+  res.status(201).json(r.rows[0]);
+}));
+
+app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const {workerId,teamId,validFrom}=req.body;
+  if(!workerId||!teamId||!validFrom) return res.status(400).json({error:'Выберите работника, бригаду и дату'});
+  const result=await tx(async c=>{
+    await c.query('UPDATE team_memberships SET valid_to=$1 WHERE worker_id=$2 AND valid_to IS NULL',[validFrom,workerId]);
+    return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,teamId,validFrom])).rows[0];
+  });
+  res.status(201).json(result);
+}));
+
+app.get('/api/attendance', auth, asyncRoute(async (req,res) => {
+  const date=String(req.query.date||'');
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  const r=await pool.query(`SELECT a.worker_id,w.display_name,a.team_id,t.name team_name
+    FROM attendance_entries a JOIN workers w ON w.id=a.worker_id JOIN teams t ON t.id=a.team_id
+    WHERE a.work_date=$1 ORDER BY t.name,w.display_name`,[date]);
+  res.json(r.rows);
+}));
+
 app.get('/api/teams', auth, asyncRoute(async (_req,res) => res.json((await pool.query('SELECT * FROM teams WHERE active=true ORDER BY name')).rows)));
 app.post('/api/teams', auth, roles('admin'), asyncRoute(async (req,res) => {
   const name=String(req.body.name||'').trim(); if(!name) return res.status(400).json({error:'Укажите название бригады'});
