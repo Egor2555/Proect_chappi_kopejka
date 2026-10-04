@@ -224,8 +224,8 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
   res.json(created);
 }));
 
-app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT r.*,p.length_mm FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
+app.get('/api/rates', auth, asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT r.*,p.length_mm,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
   res.json(r.rows);
 }));
 
@@ -282,12 +282,9 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
     const month=String(workDate).slice(0,7)+'-01';
     const closed=(await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
     if(closed) throw new Error('Этот месяц уже закрыт. Новое производство запрещено до отдельной процедуры корректировки.');
-    const rate=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,month])).rows[0];
-    if(!rate) throw new Error('На этот месяц ещё не задана расценка для выбранной длины');
-    const total=BigInt(rate.amount_minor)*BigInt(quantity);
     const p=(await c.query(`INSERT INTO production_entries(work_date,team_id,product_id,order_id,quantity,rate_id,rate_snapshot_minor,total_minor,note,created_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [workDate,teamId,productId,orderId,Number(quantity),rate.id,rate.amount_minor,total.toString(),note,req.user.sub])).rows[0];
+      VALUES($1,$2,$3,$4,$5,NULL,NULL,0,$6,$7) RETURNING *`,
+      [workDate,teamId,productId,orderId,Number(quantity),note,req.user.sub])).rows[0];
     let remaining=Number(quantity);
     if(orderId){
       const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
@@ -461,28 +458,91 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
   const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(e.id)::int entries,
-    COALESCE(SUM(e.quantity),0)::int quantity,COALESCE(SUM(e.total_minor),0)::text total_minor
-    FROM products p LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
+    COALESCE(SUM(e.quantity),0)::int quantity,
+    r.amount_minor::text rate_minor,
+    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(e.quantity),0)::bigint*r.amount_minor)::text END total_minor
+    FROM products p
+    LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
       AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
-    GROUP BY p.id ORDER BY p.length_mm`,[start]);
-  const totals=r.rows.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+BigInt(x.total_minor)}),{quantity:0,totalMinor:0n});
-  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()}});
+    LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
+    GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
+  const produced=r.rows.filter(x=>Number(x.quantity)>0);
+  const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_mm);
+  const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
+  const earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
+    FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
+    WHERE e.period_month=$1 ORDER BY w.display_name`,[start]);
+  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
   const month=String(req.body.month||'');
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
-  const report=await pool.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
-    COALESCE(SUM(e.total_minor),0)::text total_minor FROM products p
-    LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
-      AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
-    GROUP BY p.id ORDER BY p.length_mm`,[start]);
-  const totals=report.rows.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+BigInt(x.total_minor)}),{quantity:0,totalMinor:0n});
-  const snapshot={items:report.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()}};
-  const r=await pool.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
-    [start,JSON.stringify(snapshot),req.user.sub]);
-  res.status(201).json(r.rows[0]);
+  const result=await tx(async c=>{
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
+      throw new Error('Этот месяц уже закрыт');
+    const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
+      r.amount_minor::text rate_minor,
+      CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(e.quantity),0)::bigint*r.amount_minor)::text END total_minor
+      FROM products p
+      LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
+        AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+      LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
+      GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
+    const produced=items.filter(x=>Number(x.quantity)>0);
+    const missing=produced.filter(x=>x.rate_minor===null).map(x=>(Number(x.length_mm)/1000)+' м');
+    if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
+    const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
+      array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name) ORDER BY w.display_name) workers
+      FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+      WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
+      GROUP BY a.work_date,a.team_id ORDER BY a.work_date,a.team_id`,[start])).rows;
+    const prodDays=(await c.query(`SELECT e.work_date,e.team_id,SUM(e.quantity)::int quantity,
+      SUM((e.quantity::bigint*r.amount_minor))::text total_minor
+      FROM production_entries e JOIN rates r ON r.product_id=e.product_id AND r.period_month=$1::date
+      WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+      GROUP BY e.work_date,e.team_id ORDER BY e.work_date,e.team_id`,[start])).rows;
+    const attendanceMap=new Map(attendance.map(x=>[String(x.work_date)+'|'+x.team_id,x]));
+    const workerTotals=new Map();
+    const workerDetails=new Map();
+    for(const day of prodDays){
+      const a=attendanceMap.get(String(day.work_date)+'|'+day.team_id);
+      if(!a || Number(a.worker_count)<1) throw new Error('Нет отмеченных работников: '+String(day.work_date));
+      const cents=BigInt(day.total_minor);
+      const n=BigInt(a.worker_count);
+      const share=cents/n;
+      const remainder=cents%n;
+      for(const person of a.workers){
+        const wid=person.workerId;
+        const add=share;
+        workerTotals.set(wid,(workerTotals.get(wid)||0n)+add);
+        if(!workerDetails.has(wid)) workerDetails.set(wid,[]);
+        workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:add.toString()});
+      }
+      // Any indivisible kopiyka stays explicitly in the monthly remainder; it is not silently assigned.
+      if(remainder>0n){
+        for(const person of a.workers) {
+          if(!workerDetails.has(person.workerId)) workerDetails.set(person.workerId,[]);
+          workerDetails.get(person.workerId).push({date:String(day.work_date),remainderMinor:remainder.toString()});
+        }
+      }
+    }
+    for(const [workerId,amount] of workerTotals){
+      const days=workerDetails.get(workerId).filter(x=>x.shareMinor).length;
+      await c.query(`INSERT INTO monthly_worker_earnings(period_month,worker_id,amount_minor,work_days,daily_details)
+        VALUES($1,$2,$3,$4,$5)`,[start,workerId,amount.toString(),days,JSON.stringify(workerDetails.get(workerId))]);
+    }
+    const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
+    const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
+      earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
+      ratesEntered:true};
+    const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
+      [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
+    await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
+    return closure;
+  });
+  res.status(201).json(result);
 }));
 
 app.get('/api/fund', auth, asyncRoute(async (_req,res) => {
@@ -528,7 +588,7 @@ app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res
 }));
 
 app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  const tables=['workers','teams','team_memberships','products','rates','orders','order_items',
+  const tables=['workers','teams','team_memberships','products','rates','orders','order_items','monthly_worker_earnings',
     'production_entries','production_allocations','attendance_entries','inventory_movements',
     'shipments','shipment_items','payment_entries','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
   const backup={format:'chappi-backup-v1',createdAt:new Date().toISOString(),tables:{}};
