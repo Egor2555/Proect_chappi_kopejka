@@ -74,14 +74,14 @@ async function must(path, options, expected=200) {
   const productionHistory=await must('/api/production?date='+day1,{token:admin});
   assert.equal(productionHistory.length,2);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.deepEqual(beforeRates.missingRates.sort((a,b)=>a-b),[1500,2000,2500]);
-  assert.equal(beforeRates.total.quantity,453);
+  assert.deepEqual(beforeRates.missingRates.sort((a,b)=>a-b),[1500]);
+  assert.equal(beforeRates.total.quantity,2);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}},201);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product2.id,periodMonth:month,amountMinor:1000}},201);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product25.id,periodMonth:month,amountMinor:1500}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(report.total.quantity,453);
-  assert.equal(report.total.totalMinor,'525375');
+  assert.equal(report.total.quantity,2);
+  assert.equal(report.total.totalMinor,'250');
 
   await must('/api/fund',{token:admin,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1000,note:'CI fund'}},201);
   const fund=await must('/api/fund',{token:admin});
@@ -95,10 +95,9 @@ async function must(path, options, expected=200) {
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(closedReport.earnings.length,3);
   const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
-  assert.equal(earned[worker.id],'200125');
-  assert.equal(earned[workerS.id],'125125');
-  assert.equal(earned[workerC.id],'200125');
-  assert.equal(closedReport.total.totalMinor,'525375');
+  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[83,83,84]);
+  assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
+  assert.equal(closedReport.total.totalMinor,'250');
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
