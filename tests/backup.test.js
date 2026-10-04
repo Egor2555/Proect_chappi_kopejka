@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateBackup, REQUIRED_TABLES } = require('../src/backup');
+const { validateBackup, validateBackupRelations, REQUIRED_TABLES } = require('../src/backup');
+
 
 function validBackup() {
   return {
@@ -34,4 +35,20 @@ test('backup validator rejects unknown backup format', () => {
   const backup = validBackup();
   backup.format='old-format';
   assert.throws(() => validateBackup(backup), /Неподдерживаемый формат/);
+});
+
+
+test('backup relation validator accepts valid references', () => {
+  const backup = validBackup();
+  backup.tables.workers.push({id:'w1'});
+  backup.tables.teams.push({id:'t1'});
+  backup.tables.users.push({id:'u1',username:'admin',role:'admin',worker_id:'w1'});
+  backup.tables.production_entries.push({id:'p1',team_id:'t1',product_id:null,created_by:'u1'});
+  assert.equal(validateBackupRelations(backup), true);
+});
+
+test('backup relation validator rejects dangling references', () => {
+  const backup = validBackup();
+  backup.tables.production_entries.push({id:'p1',team_id:'missing'});
+  assert.throws(() => validateBackupRelations(backup), /Нарушена связь/);
 });
