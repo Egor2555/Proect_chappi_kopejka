@@ -37,7 +37,6 @@ function validateBackup(backup) {
 function buildRestorePlan(backup, existingUserIds = []) {
   const summary = validateBackup(backup);
   validateBackupRelations(backup);
-  const existing = new Set(existingUserIds.map(String));
   const backupUserIds = new Set(backup.tables.users.map(u => String(u.id)));
   const missingExistingUsers = existingUserIds.filter(id => !backupUserIds.has(String(id)));
   return {
