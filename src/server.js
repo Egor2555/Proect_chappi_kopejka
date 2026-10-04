@@ -179,6 +179,8 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
     return res.status(400).json({error:'Проверьте дату, бригаду, изделие и количество'});
   const result=await tx(async c=>{
     const month=String(workDate).slice(0,7)+'-01';
+    const closed=(await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
+    if(closed) throw new Error('Этот месяц уже закрыт. Новое производство запрещено до отдельной процедуры корректировки.');
     const rate=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,month])).rows[0];
     if(!rate) throw new Error('На этот месяц ещё не задана расценка для выбранной длины');
     const total=BigInt(rate.amount_minor)*BigInt(quantity);
@@ -256,7 +258,7 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
     for(const item of items){
       const qty=Number(item.quantity);
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
-      const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1 FOR UPDATE',[item.productId])).rows[0].qty;
+      await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.productId]);\n      const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
       await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3)',[sh.id,item.productId,qty]);
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
