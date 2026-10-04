@@ -309,8 +309,11 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
       [workDate,teamId,productId,orderId,Number(quantity),note,req.user.sub])).rows[0];
     let remaining=Number(quantity);
     if(orderId){
+      // Serialize competing production allocations for the same order so two
+      // simultaneous entries cannot both consume the same remaining order need.
+      await c.query('SELECT id FROM orders WHERE id=$1 FOR UPDATE',[orderId]);
       const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
-      const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0].qty;
+      const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL',[orderId,productId])).rows[0].qty;
       if(!requested) throw new Error('В заказе нет выбранного типоразмера');
       const needBefore=Math.max(0,Number(requested.required_qty)-Number(done));
       const direct=Math.min(Number(quantity),needBefore);
