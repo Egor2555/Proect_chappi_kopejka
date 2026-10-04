@@ -129,6 +129,7 @@ app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (re
   const before=(await pool.query('SELECT * FROM workers WHERE id=$1',[req.params.id])).rows[0];
   if(!before) return res.status(404).json({error:'Работник не найден'});
   const after=(await pool.query('UPDATE workers SET active=false,archived_at=now() WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
+  await pool.query('UPDATE users SET active=false WHERE worker_id=$1',[req.params.id]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','worker',$2,$3,$4)",
     [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
   res.json(after);
