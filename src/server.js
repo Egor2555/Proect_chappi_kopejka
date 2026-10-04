@@ -84,11 +84,19 @@ async function audit(client, actor, action, type, id, beforeData, afterData, rea
     [actor, action, type, id || null, beforeData ? JSON.stringify(beforeData) : null, afterData ? JSON.stringify(afterData) : null, reason || null]
   );
 }
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   try {
     if (!token) throw new Error('missing');
     req.user = jwt.verify(token, JWT_SECRET);
+    if (['admin','brigadier'].includes(req.user.role)) {
+      const session=(await pool.query('SELECT active,last_activity_at FROM users WHERE id=$1',[req.user.sub])).rows[0];
+      if (!session || !session.active) throw new Error('inactive');
+      if (session.last_activity_at && Date.now() - new Date(session.last_activity_at).getTime() > 30*60*1000) {
+        return res.status(401).json({ error: 'Сеанс администратора/бригадира завершён после 30 минут бездействия. Войдите снова.' });
+      }
+      await pool.query('UPDATE users SET last_activity_at=now() WHERE id=$1',[req.user.sub]);
+    }
     next();
   } catch { res.status(401).json({ error: 'Требуется вход в систему' }); }
 }
