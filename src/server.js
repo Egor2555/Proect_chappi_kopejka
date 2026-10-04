@@ -319,18 +319,9 @@ app.post('/api/admin/access/:role/unlock', auth, roles('admin'), asyncRoute(asyn
   res.json({ok:true});
 }));
 
-app.post('/api/auth/change-password', auth, asyncRoute(async (req,res) => {
-  const {currentPassword,newPassword}=req.body;
-  if(typeof newPassword!=='string'||newPassword.length<10)
-    return res.status(400).json({error:'Новый пароль должен содержать не менее 10 символов'});
-  const found=await pool.query('SELECT password_hash FROM users WHERE id=$1 AND active=true',[req.user.sub]);
-  if(!found.rowCount||!await bcrypt.compare(String(currentPassword||''),found.rows[0].password_hash))
-    return res.status(400).json({error:'Текущий пароль указан неверно'});
-  const hash=await bcrypt.hash(newPassword,12);
-  await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2',[hash,req.user.sub]);
-  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id) VALUES($1,'change_password','user',$2)",[req.user.sub,req.user.sub]);
-  res.json({ok:true});
-}));
+// Самостоятельная смена пароля отключена.
+ // Доступ профилей работников и бригадира изменяется только администратором
+ // через управление PIN в разделе «Администрирование».
 
 
 app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
