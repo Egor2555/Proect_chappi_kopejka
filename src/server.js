@@ -367,6 +367,24 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   res.status(201).json(r.rows[0]);
 }));
 
+app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT a.id,u.username,a.action,a.entity_type,a.entity_id,a.before_data,a.after_data,a.reason,a.created_at
+    FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 500`);
+  res.json(r.rows);
+}));
+
+app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  const tables=['workers','teams','team_memberships','products','rates','orders','order_items',
+    'production_entries','production_allocations','attendance_entries','inventory_movements',
+    'shipments','shipment_items','payment_entries','monthly_closures','penny_events','audit_log'];
+  const backup={format:'chappi-backup-v1',createdAt:new Date().toISOString(),tables:{}};
+  for(const table of tables) backup.tables[table]=(await pool.query('SELECT * FROM '+table)).rows;
+  backup.tables.users=(await pool.query('SELECT id,username,role,worker_id,active,created_at FROM users')).rows;
+  res.setHeader('Content-Type','application/json; charset=utf-8');
+  res.setHeader('Content-Disposition','attachment; filename="chappi-backup.json"');
+  res.send(JSON.stringify(backup,null,2));
+}));
+
 app.get('/api/admin/login-log', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT l.id,l.username_attempt,l.success,l.created_at,u.username
     FROM login_log l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC LIMIT 300`);
