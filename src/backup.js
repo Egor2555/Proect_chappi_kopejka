@@ -41,8 +41,23 @@ function buildRestorePlan(backup) {
 }
 
 function validateBackupRelations(backup) {
-  const refs = [['users','worker_id','workers'],['team_memberships','worker_id','workers'],['team_memberships','team_id','teams'],['rates','product_id','products'],['rates','created_by','users'],['order_items','order_id','orders'],['order_items','product_id','products'],['production_entries','team_id','teams'],['production_entries','product_id','products'],['production_entries','order_id','orders'],['production_entries','rate_id','rates'],['production_entries','created_by','users'],['attendance_entries','worker_id','workers'],['attendance_entries','team_id','teams'],['attendance_entries','created_by','users'],['inventory_movements','product_id','products'],['inventory_movements','production_entry_id','production_entries'],['inventory_movements','order_id','orders'],['inventory_movements','created_by','users'],['shipments','order_id','orders'],['shipments','created_by','users'],['shipment_items','shipment_id','shipments'],['shipment_items','product_id','products'],['payment_entries','shipment_id','shipments'],['payment_entries','created_by','users'],['monthly_closures','closed_by','users'],['penny_events','created_by','users'],['fund_entries','created_by','users'],['production_allocations','production_entry_id','production_entries'],['production_allocations','order_id','orders'],['production_allocations','product_id','products'],['monthly_worker_earnings','worker_id','workers'],['audit_log','actor_user_id','users'],['login_log','user_id','users']];
+  const refs = [['users','worker_id','workers'],['team_memberships','worker_id','workers'],['team_memberships','team_id','teams'],['rates','product_id','products'],['rates','created_by','users'],['orders','created_by','users'],['order_items','order_id','orders'],['order_items','product_id','products'],['production_entries','team_id','teams'],['production_entries','product_id','products'],['production_entries','order_id','orders'],['production_entries','rate_id','rates'],['production_entries','created_by','users'],['attendance_entries','worker_id','workers'],['attendance_entries','team_id','teams'],['attendance_entries','created_by','users'],['inventory_movements','product_id','products'],['inventory_movements','production_entry_id','production_entries'],['inventory_movements','order_id','orders'],['inventory_movements','created_by','users'],['shipments','order_id','orders'],['shipments','created_by','users'],['shipment_items','shipment_id','shipments'],['shipment_items','product_id','products'],['payment_entries','shipment_id','shipments'],['payment_entries','created_by','users'],['monthly_closures','closed_by','users'],['penny_events','created_by','users'],['fund_entries','created_by','users'],['production_allocations','production_entry_id','production_entries'],['production_allocations','order_id','orders'],['production_allocations','product_id','products'],['monthly_worker_earnings','worker_id','workers'],['audit_log','actor_user_id','users'],['login_log','user_id','users']];
   for (const [table,column,parent] of refs) for (const row of backup.tables[table]) if(row[column]!=null && !backup.tables[parent].some(x=>String(x.id)===String(row[column]))) throw new Error('Нарушена связь: '+table+'.'+column+' -> '+parent);
+  for (const table of REQUIRED_TABLES) {
+    const ids = new Set();
+    for (const row of backup.tables[table]) {
+      if (row.id == null) continue;
+      const id = String(row.id);
+      if (ids.has(id)) throw new Error('Дублирующийся id в таблице: ' + table);
+      ids.add(id);
+    }
+  }
+  const usernames = new Set();
+  for (const user of backup.tables.users) {
+    const username = String(user.username);
+    if (usernames.has(username)) throw new Error('Дублирующийся username: ' + username);
+    usernames.add(username);
+  }
   return true;
 }
 
