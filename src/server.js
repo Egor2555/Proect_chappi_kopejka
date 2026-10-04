@@ -76,7 +76,7 @@ app.post('/api/auth/change-password', auth, asyncRoute(async (req,res) => {
     return res.status(400).json({error:'Текущий пароль указан неверно'});
   const hash=await bcrypt.hash(newPassword,12);
   await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2',[hash,req.user.sub]);
-  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id) VALUES($1,'change_password','user',$1)",[req.user.sub]);
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id) VALUES($1,'change_password','user',$2)",[req.user.sub,req.user.sub]);
   res.json({ok:true});
 }));
 
