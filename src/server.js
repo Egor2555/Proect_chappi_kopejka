@@ -427,6 +427,44 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
   res.status(201).json(order);
 }));
 
+app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const orderId=String(req.params.id);
+  const reason=String(req.body.reason||'').trim();
+  if(!reason) return res.status(400).json({error:'Укажите причину отмены заказа'});
+  const result=await tx(async c=>{
+    const order=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
+    if(!order) throw new Error('Заказ не найден');
+    if(['cancelled','archived'].includes(order.status)) throw new Error('Заказ уже отменён или находится в архиве');
+    const shipmentCount=Number((await c.query('SELECT COUNT(*)::int n FROM shipments WHERE order_id=$1',[orderId])).rows[0].n);
+    // Already shipped units remain historical facts; only the unshipped remainder is cancelled.
+    const reservations=(await c.query(`SELECT r.id,r.reference_id,r.quantity_delta,
+        (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa
+          WHERE sa.inventory_movement_id=r.reference_id),0))::int AS free_reserved
+      FROM inventory_movements r
+      WHERE r.order_id=$1 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
+      FOR UPDATE`,[orderId])).rows;
+    for(const reservation of reservations){
+      const freeReserved=Math.max(0,Number(reservation.free_reserved));
+      if(!freeReserved) continue;
+      await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+        SELECT product_id,'adjustment_in',$1,production_entry_id,$2,$3,$4,$5
+        FROM inventory_movements WHERE id=$6`,
+        [freeReserved,orderId,reservation.reference_id,req.user.sub,'Возврат незатребованного резерва при отмене заказа',reservation.id]);
+    }
+    await c.query('UPDATE production_allocations SET voided_at=now() WHERE order_id=$1 AND voided_at IS NULL',[orderId]);
+    const before=order;
+    const after=(await c.query(`UPDATE orders SET status='cancelled',completed_at=NULL,cancelled_at=now(),cancel_reason=$2
+      WHERE id=$1 RETURNING *`,[orderId,reason])).rows[0];
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
+    await c.query(`UPDATE orders SET status='active' WHERE id=(
+      SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+    ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
+    await audit(c,req.user.sub,'cancel','order',orderId,before,{...after,shipmentCount},reason);
+    return after;
+  });
+  res.json(result);
+}));
+
 app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {workDate,productId,orderId=null,quantity,note=''}=req.body;
   if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
