@@ -266,6 +266,7 @@ app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (re
   if(!before) return res.status(404).json({error:'Работник не найден'});
   const after=(await pool.query('UPDATE workers SET active=false,archived_at=now() WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
   await pool.query('UPDATE users SET active=false WHERE worker_id=$1',[req.params.id]);
+  await pool.query("UPDATE team_memberships SET valid_to=CASE WHEN valid_to IS NULL OR valid_to>CURRENT_DATE THEN CURRENT_DATE ELSE valid_to END WHERE worker_id=$1 AND valid_to IS NULL",[req.params.id]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','worker',$2,$3,$4)",
     [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
   res.json(after);
@@ -291,6 +292,9 @@ app.post('/api/users', auth, roles('admin'), asyncRoute(async (_req,res) => {
 app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {workerId,validFrom}=req.body;
   if(!workerId||!validFrom) return res.status(400).json({error:'Выберите работника и дату'});
+  const workerCheck=await pool.query('SELECT id,active FROM workers WHERE id=$1',[workerId]);
+  if(!workerCheck.rowCount) return res.status(404).json({error:'Работник не найден'});
+  if(!workerCheck.rows[0].active) return res.status(400).json({error:'Нельзя добавить архивного работника в бригаду'});
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
     if(!team) throw new Error('Единственная бригада не настроена');
