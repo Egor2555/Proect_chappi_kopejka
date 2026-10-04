@@ -861,11 +861,25 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
   const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_mm);
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
-  const earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
+  let earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
     WHERE e.period_month=$1 ${req.user.role==='worker' ? 'AND e.worker_id=$2' : ''} ORDER BY w.display_name`,
     req.user.role==='worker' ? [start,req.user.workerId] : [start]);
   const closureRow=(await pool.query('SELECT totals FROM monthly_closures WHERE period_month=$1',[start])).rows[0]||null;
+  // A closed month is immutable: show the exact frozen snapshot, including the Happy Kopeck,
+  // instead of the pre-penny working rows from monthly_worker_earnings.
+  if(closureRow && Array.isArray(closureRow.totals?.earnings)){
+    const ids=closureRow.totals.earnings.map(x=>String(x.workerId));
+    if(ids.length){
+      const names=(await pool.query('SELECT id,display_name FROM workers WHERE id = ANY($1::uuid[])',[ids])).rows;
+      const nameMap=new Map(names.map(x=>[String(x.id),x.display_name]));
+      const frozen=closureRow.totals.earnings
+        .filter(x=>req.user.role!=='worker' || String(x.workerId)===String(req.user.workerId))
+        .map(x=>({worker_id:x.workerId,display_name:nameMap.get(String(x.workerId))||'Архивный работник',amount_minor:String(x.amountMinor),work_days:0,daily_details:[]}))
+        .sort((a,b)=>a.display_name.localeCompare(b.display_name,'ru'));
+      earnings={rows:frozen};
+    } else earnings={rows:[]};
+  }
   let residualMinor=0n, closedHappyKopeck=null;
   if(closureRow){
     const snapshot=closureRow.totals||{};
@@ -1039,10 +1053,21 @@ app.post('/api/fund', auth, roles('admin'), asyncRoute(async (req,res) => {
   res.status(201).json(result);
 }));
 
-app.get('/api/archive/months', auth, asyncRoute(async (_req,res) => {
+app.get('/api/archive/months', auth, asyncRoute(async (req,res) => {
   const r=await pool.query(`SELECT * FROM monthly_closures
     WHERE period_month >= date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date - INTERVAL '5 months')::date
     ORDER BY period_month DESC`);
+  for(const row of r.rows){
+    const frozen=Array.isArray(row.totals?.earnings)?row.totals.earnings:[];
+    const ids=frozen.map(x=>String(x.workerId));
+    const names=ids.length?(await pool.query('SELECT id,display_name FROM workers WHERE id = ANY($1::uuid[])',[ids])).rows:[];
+    const nameMap=new Map(names.map(x=>[String(x.id),x.display_name]));
+    row.totals={...row.totals,earnings:frozen.map(x=>({
+      workerId:x.workerId,
+      displayName:nameMap.get(String(x.workerId))||'Архивный работник',
+      amountMinor:String(x.amountMinor)
+    }))};
+  }
   res.json(r.rows);
 }));
 
