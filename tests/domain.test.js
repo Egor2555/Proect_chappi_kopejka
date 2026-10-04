@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { calculateTotalMinor, allocateProduction } = require('../src/domain');
+const { simulateHappyKopeck } = require('../src/penny');
 
 test('money multiplication uses exact integer minor units', () => {
   assert.equal(calculateTotalMinor(125, 3), '375');
@@ -31,4 +32,8 @@ test('production first fills direct order, then priority queue, then free stock'
 
 test('no demand leaves all production as free stock', () => {
   assert.deepEqual(allocateProduction(7, 0, []), { allocations:[], freeStock:7 });
+});
+
+test('Happy Kopeck stays disabled until its real rule is recovered', () => {
+  assert.throws(simulateHappyKopeck, error => error.code === 'PENNY_ALGORITHM_NOT_APPROVED');
 });
