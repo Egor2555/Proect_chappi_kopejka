@@ -225,6 +225,9 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
     if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
   }
   const created=await tx(async c=>{
+    const month=String(workDate).slice(0,7)+'-01';
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount)
+      throw new Error('Этот месяц уже закрыт. Посещаемость изменять нельзя.');
     for(const workerId of workerIds){
       const member=await c.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
         [workerId,teamId,workDate]);
