@@ -328,9 +328,6 @@ app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!team) return res.status(500).json({error:'Единственная бригада не настроена'});
   const teamId=team.id;
-  if(req.user.role==='brigadier' && !(await pool.query(
-    'SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
-    [req.user.workerId,teamId,date])).rowCount) return res.status(403).json({error:'Можно просматривать только свою бригаду'});
   const r=await pool.query(`SELECT w.id,w.display_name,w.active
     FROM workers w JOIN team_memberships m ON m.worker_id=w.id
     WHERE m.team_id=$1 AND m.valid_from<=$2 AND (m.valid_to IS NULL OR m.valid_to>=$2)
@@ -361,11 +358,6 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
   const teamId=singleTeam.id;
-  if(req.user.role==='brigadier') {
-    const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
-      [req.user.workerId,teamId,workDate]);
-    if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
-  }
   const created=await tx(async c=>{
     // Serialize attendance replacement for the same brigade/day so two saves cannot overwrite each other mid-transaction.
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:attendance:' || $1 || ':' || $2))",[workDate,teamId]);
