@@ -492,16 +492,24 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
     WHERE e.period_month=$1 ${req.user.role==='worker' ? 'AND e.worker_id=$2' : ''} ORDER BY w.display_name`,
     req.user.role==='worker' ? [start,req.user.workerId] : [start]);
-  const dayRows=await pool.query(`SELECT e.work_date,e.team_id,SUM((e.quantity::bigint*r.amount_minor))::text total_minor
-    FROM production_entries e JOIN rates r ON r.product_id=e.product_id AND r.period_month=$1::date
-    WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
-    GROUP BY e.work_date,e.team_id`,[start]);
-  const dayAttendance=await pool.query(`SELECT work_date,team_id,COUNT(*)::int worker_count
-    FROM attendance_entries WHERE work_date >= $1::date AND work_date < ($1::date + INTERVAL '1 month')
-    GROUP BY work_date,team_id`,[start]);
-  const attendanceCounts=new Map(dayAttendance.rows.map(x=>[String(x.work_date)+'|'+x.team_id,Number(x.worker_count)]));
+  const closureRow=(await pool.query('SELECT totals FROM monthly_closures WHERE period_month=$1',[start])).rows[0]||null;
   let residualMinor=0n;
-  for(const d of dayRows.rows){ const n=attendanceCounts.get(String(d.work_date)+'|'+d.team_id)||0; if(n>0) residualMinor += BigInt(d.total_minor)%BigInt(n); }
+  let closedHappyKopeck=null;
+  if(closureRow){
+    const snapshot=closureRow.totals||{};
+    residualMinor=BigInt(snapshot.happyKopeck?.residualMinor||'0');
+    closedHappyKopeck=snapshot.happyKopeck||null;
+  } else {
+    const dayRows=await pool.query(`SELECT e.work_date,e.team_id,SUM((e.quantity::bigint*r.amount_minor))::text total_minor
+      FROM production_entries e JOIN rates r ON r.product_id=e.product_id AND r.period_month=$1::date
+      WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+      GROUP BY e.work_date,e.team_id`,[start]);
+    const dayAttendance=await pool.query(`SELECT work_date,team_id,COUNT(*)::int worker_count
+      FROM attendance_entries WHERE work_date >= $1::date AND work_date < ($1::date + INTERVAL '1 month')
+      GROUP BY work_date,team_id`,[start]);
+    const attendanceCounts=new Map(dayAttendance.rows.map(x=>[String(x.work_date)+'|'+x.team_id,Number(x.worker_count)]));
+    for(const d of dayRows.rows){ const n=attendanceCounts.get(String(d.work_date)+'|'+d.team_id)||0; if(n>0) residualMinor += BigInt(d.total_minor)%BigInt(n); }
+  }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
         FROM attendance_entries a
@@ -512,7 +520,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
         ORDER BY w.display_name`,[start])).rows
     : [];
   res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,
-    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString()}});
+    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString(),winnerId:closedHappyKopeck?.winnerId||null}});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
