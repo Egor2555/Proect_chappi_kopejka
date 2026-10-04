@@ -1058,7 +1058,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
-    const items=(await c.query(`SELECT p.id,p.length_mm,COUNT(DISTINCT pe.id)::int entries,
+    const items=(await c.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
       COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
       CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
