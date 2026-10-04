@@ -220,3 +220,5 @@ CREATE TABLE IF NOT EXISTS fund_entries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_fund_date ON fund_entries(entry_date);
+
+ALTER TABLE production_allocations ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
