@@ -264,7 +264,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
       VALUES($1,'production_in',$2,$3,$4,$5)`,[productId,assigned,p.id,orderId,req.user.sub]);
     if(remaining>0){
       const candidates=(await c.query(`SELECT o.id,i.required_qty,
-        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id),0) done
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=o.id AND a.product_id=i.product_id),0) done
         FROM orders o JOIN order_items i ON i.order_id=o.id
         WHERE o.id<>COALESCE($1::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
           AND o.status IN ('queued','active') AND i.product_id=$2
@@ -280,7 +280,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
           [productId,move,p.id,candidate.id,req.user.sub]);
         remaining-=move;
         const candidateMissing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
-          COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[candidate.id])).rows[0].n;
+          COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[candidate.id])).rows[0].n;
         if(candidateMissing===0) {
           await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
           await c.query(`UPDATE orders SET status='active' WHERE id=(
@@ -294,7 +294,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
       VALUES($1,'production_in',$2,$3,$4,'Излишек на свободный склад')`,[productId,remaining,p.id,req.user.sub]);
     if(orderId){
       const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
-        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[orderId])).rows[0].n;
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[orderId])).rows[0].n;
       if(missing===0) {
         await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
         await c.query(`UPDATE orders SET status='active' WHERE id=(
@@ -306,6 +306,42 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
     return p;
   });
   res.status(201).json(result);
+}));
+
+app.get('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+  const date=String(req.query.date||'');
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  const params=[date];
+  let teamFilter='';
+  if(req.user.role==='brigadier') { params.push(req.user.workerId); teamFilter=' AND e.team_id IN (SELECT team_id FROM team_memberships WHERE worker_id=$2 AND valid_from<=$1 AND (valid_to IS NULL OR valid_to>=$1))'; }
+  const r=await pool.query(`SELECT e.*,p.length_mm,p.section_width_mm,p.section_height_mm,t.name team_name,o.order_number,u.username created_by_name
+    FROM production_entries e JOIN products p ON p.id=e.product_id JOIN teams t ON t.id=e.team_id
+    LEFT JOIN orders o ON o.id=e.order_id JOIN users u ON u.id=e.created_by
+    WHERE e.work_date=$1 AND e.voided_at IS NULL `+teamFilter+` ORDER BY e.created_at DESC`,params);
+  res.json(r.rows);
+}));
+
+app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const reason=String(req.body.reason||'').trim();
+  if(!reason) return res.status(400).json({error:'Укажите причину исправления'});
+  const result=await tx(async c=>{
+    const entry=(await c.query('SELECT * FROM production_entries WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
+    if(!entry||entry.voided_at) throw new Error('Запись не найдена или уже отменена');
+    const month=String(entry.work_date).slice(0,7)+'-01';
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Закрытый месяц нельзя исправлять обычной операцией');
+    const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[entry.id])).rows;
+    for(const movement of movements) {
+      const reverse=-Number(movement.quantity_delta);
+      await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
+        VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,entry.id,movement.order_id,req.user.sub,'Сторно записи: '+reason]);
+    }
+    await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id]);
+    const updated=(await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1 RETURNING *',[entry.id,reason])).rows[0];
+    await audit(c,req.user.sub,'void','production_entry',entry.id,entry,updated,reason);
+    return updated;
+  });
+  res.json(result);
 }));
 
 app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
