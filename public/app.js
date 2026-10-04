@@ -282,8 +282,7 @@ async function archive(){
  }).join('')+'</div>'
 }
 async function profile(){
- $('#profile').innerHTML='<h1>Профиль</h1><div class="card"><h2>Сменить пароль</h2><form id="passwordForm"><label>Текущий пароль<input type="password" name="currentPassword" required autocomplete="current-password"></label><label>Новый пароль (не менее 10 символов)<input type="password" name="newPassword" minlength="10" required autocomplete="new-password"></label><button>Сохранить новый пароль</button></form></div>';
- $('#passwordForm').addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));try{await api('/auth/change-password',{method:'POST',body:JSON.stringify(d)});notify('Пароль изменён','success');e.currentTarget.reset()}catch(err){notify(err.message,'error')}})
+ $('#profile').innerHTML='<h1>Профиль</h1><div class="card"><p class="muted">Пароль и PIN профиля самостоятельно изменить нельзя. Изменение доступа выполняет только администратор.</p></div>';
 }
 async function admin(){
  await api('/admin/mode-event',{method:'POST',body:JSON.stringify({})});
