@@ -91,6 +91,8 @@ async function must(path, options, expected=200) {
   await must('/api/orders/'+orderA.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/orders/'+orderB.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}},201);
+  const duplicateClose=await request('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}});
+  assert.equal(duplicateClose.status,400);
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(closedReport.earnings.length,3);
   const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
@@ -119,6 +121,7 @@ async function must(path, options, expected=200) {
   const backup=await must('/api/admin/export',{token:admin});
   assert.ok(backup.tables.workers.length>=1);
   assert.ok(backup.tables.login_log.length>=2);
+  assert.ok(backup.tables.monthly_worker_earnings.length===3);
   assert.equal(JSON.stringify(backup).includes('password_hash'),false);
 
   console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive and backup');
