@@ -912,16 +912,17 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
-    const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(sa.quantity),0)::int quantity,
+    const items=(await c.query(`SELECT p.id,p.length_mm,COUNT(DISTINCT pe.id)::int entries,
+      COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
       CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
       FROM products p
-      LEFT JOIN shipment_items si ON si.product_id=p.id
-      LEFT JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
+      JOIN shipment_items si ON si.product_id=p.id
+      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
         AND s.shipped_at < ($1::date + INTERVAL '1 month')
-      LEFT JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
-      LEFT JOIN inventory_movements im ON im.id=sa.inventory_movement_id
-      LEFT JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
+      JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+      JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+      JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
       LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
       GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
     const produced=items.filter(x=>Number(x.quantity)>0);
@@ -980,6 +981,11 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         [start,happyKopeck.amountMinor,happyKopeck.amountMinor,JSON.stringify({winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}), 'random-crypto-v1', req.user.sub]);
     }
     const workerTotals=new Map(calculation.earnings.map(x=>[x.workerId,BigInt(x.amountMinor)]));
+    // The Happy Kopeck is part of the monthly wage fund and must be reflected
+    // in the winner's displayed monthly pay, not only in penny_events.
+    if(residualMinor>0n && happyKopeck.winnerId){
+      workerTotals.set(happyKopeck.winnerId,(workerTotals.get(happyKopeck.winnerId)||0n)+residualMinor);
+    }
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
       earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
