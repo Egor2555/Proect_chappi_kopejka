@@ -386,7 +386,7 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
   res.json(created);
 }));
 
-app.get('/api/rates', auth, asyncRoute(async (_req,res) => {
+app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT r.*,p.length_mm,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
   res.json(r.rows);
 }));
