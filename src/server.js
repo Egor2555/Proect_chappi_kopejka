@@ -462,7 +462,15 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
         FROM inventory_movements WHERE id=$6`,
         [freeReserved,orderId,reservation.reference_id,req.user.sub,'Возврат незатребованного резерва при отмене заказа',reservation.id]);
     }
-    await c.query('UPDATE production_allocations SET voided_at=now() WHERE order_id=$1 AND voided_at IS NULL',[orderId]);
+    await c.query(`UPDATE production_allocations a
+      SET voided_at=now()
+      WHERE a.order_id=$1 AND a.voided_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM shipment_allocations sa
+          JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+          WHERE im.production_entry_id=a.production_entry_id
+        )`,[orderId]);
     const before=order;
     const after=(await c.query(`UPDATE orders SET status='cancelled',completed_at=NULL,cancelled_at=now(),cancel_reason=$2
       WHERE id=$1 RETURNING *`,[orderId,reason])).rows[0];
