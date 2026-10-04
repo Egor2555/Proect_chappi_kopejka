@@ -198,7 +198,17 @@ async function people(){
    try{
      const [membersForDate,attendance]=await Promise.all([api('/team-members?date='+encodeURIComponent(date)),api('/attendance?date='+encodeURIComponent(date))]);
      const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
-     box.innerHTML=membersForDate.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('') || '<p class="empty">На эту дату в бригаде нет работников.</p>';
+     box.innerHTML=membersForDate.length
+     ? '<label class="check-all"><input type="checkbox" id="attendanceAll"> <strong>Все работники бригады</strong></label>'+membersForDate.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('')
+     : '<p class="empty">На эту дату в бригаде нет работников.</p>';
+   const all=$('#attendanceAll');
+   const boxes=[...box.querySelectorAll('input[name="workerIds"]')];
+   if(all){
+     all.checked=boxes.length>0&&boxes.every(x=>x.checked);
+     all.indeterminate=boxes.some(x=>x.checked)&&!all.checked;
+     all.onchange=()=>boxes.forEach(x=>x.checked=all.checked);
+     boxes.forEach(x=>x.onchange=()=>{all.checked=boxes.every(y=>y.checked);all.indeterminate=boxes.some(y=>y.checked)&&!all.checked;});
+   }
    }catch(err){box.innerHTML='<p class="error">'+escapeHtml(err.message)+'</p>';}
  };
  if(af){af.elements.workDate.addEventListener('change',loadAttendancePeople);loadAttendancePeople();af.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(af);try{await api('/attendance',{method:'POST',body:JSON.stringify({workDate:fd.get('workDate'),workerIds:fd.getAll('workerIds')})});notify('Присутствие сохранено');await loadAttendancePeople()}catch(err){notify(err.message,'error')}});}
