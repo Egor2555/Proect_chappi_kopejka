@@ -50,6 +50,33 @@ function buildUserRestoreMap(backupUsers, existingUsers) {
   };
 }
 
+const USER_REFERENCE_COLUMNS = {
+  rates: ['created_by'],
+  orders: ['created_by'],
+  production_entries: ['created_by'],
+  attendance_entries: ['created_by'],
+  inventory_movements: ['created_by'],
+  shipments: ['created_by'],
+  payment_entries: ['created_by'],
+  monthly_closures: ['closed_by'],
+  penny_events: ['created_by'],
+  fund_entries: ['created_by'],
+  audit_log: ['actor_user_id'],
+  login_log: ['user_id']
+};
+
+function remapUserReferences(table, row, userIdMap) {
+  const copy = { ...row };
+  for (const column of USER_REFERENCE_COLUMNS[table] || []) {
+    if (copy[column] != null) {
+      const mapped = userIdMap[String(copy[column])];
+      if (!mapped) throw new Error('Не удалось сопоставить пользователя: ' + copy[column] + ' в ' + table + '.' + column);
+      copy[column] = mapped;
+    }
+  }
+  return copy;
+}
+
 function buildRestorePlan(backup, existingUsers = []) {
   const summary = validateBackup(backup);
   validateBackupRelations(backup);
@@ -98,4 +125,4 @@ function validateBackupRelations(backup) {
   return true;
 }
 
-module.exports = { RESTORE_ORDER, REQUIRED_TABLES, validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan };
+module.exports = { RESTORE_ORDER, REQUIRED_TABLES, USER_REFERENCE_COLUMNS, validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan, remapUserReferences };
