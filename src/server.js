@@ -678,6 +678,9 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
+    const closedMonth=(await c.query(`SELECT 1 FROM monthly_closures
+      WHERE period_month=date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date)`)).rowCount>0;
+    if(closedMonth) throw new Error('Текущий месяц уже закрыт. Новые отгрузки запрещены.');
     const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
       [shipmentNumber,orderId,recipient,note,req.user.sub])).rows[0];
     for(const item of items){
@@ -863,7 +866,19 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
+      WHERE EXISTS (
+        SELECT 1
+        FROM shipment_items si
+        JOIN shipments s ON s.id=si.shipment_id
+          AND s.shipped_at >= $1::date
+          AND s.shipped_at < ($1::date + INTERVAL '1 month')
+        JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+        JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+        JOIN production_entries pe ON pe.id=im.production_entry_id
+          AND pe.voided_at IS NULL
+          AND pe.work_date=a.work_date
+          AND pe.team_id=a.team_id
+      )
       GROUP BY a.work_date,a.team_id ORDER BY a.work_date,a.team_id`,[start])).rows;
     const prodDays=(await c.query(`SELECT pe.work_date,pe.team_id,SUM(sa.quantity)::int quantity,
       SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
