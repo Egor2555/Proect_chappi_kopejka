@@ -165,6 +165,7 @@ app.post('/api/auth/recovery/request', recoveryRequestLimiter, asyncRoute(async 
   const codeHash=crypto.createHash('sha256').update(code).digest('hex');
   const expiresAt=new Date(Date.now()+ADMIN_RECOVERY_TTL_MS);
   const recovery=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:admin-recovery'))");
     await c.query("UPDATE admin_recovery_codes SET used_at=COALESCE(used_at,now()) WHERE user_id=$1 AND used_at IS NULL",[admin.id]);
     return (await c.query('INSERT INTO admin_recovery_codes(user_id,code_hash,expires_at) VALUES($1,$2,$3) RETURNING id',[admin.id,codeHash,expiresAt])).rows[0];
   });
@@ -194,8 +195,10 @@ app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async 
   if(!validPin(newPin)) return res.status(400).json({error:'Новый PIN должен содержать от 4 до 8 цифр.'});
   const codeHash=crypto.createHash('sha256').update(code).digest('hex');
   const result=await tx(async c=>{
-    const admin=(await c.query("SELECT id,username FROM users WHERE role='admin' AND active=true FOR UPDATE")).rows[0];
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:admin-recovery'))");
+    const admin=(await c.query("SELECT id,username,pin_locked FROM users WHERE role='admin' AND active=true FOR UPDATE")).rows[0];
     if(!admin) throw new Error('Профиль администратора не найден.');
+    if(!admin.pin_locked) throw new Error('Профиль администратора уже не заблокирован. Запросите восстановление только при блокировке.');
     const recovery=(await c.query(`SELECT id FROM admin_recovery_codes
       WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL AND expires_at>now()
       ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[admin.id,codeHash])).rows[0];
