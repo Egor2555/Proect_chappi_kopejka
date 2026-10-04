@@ -311,7 +311,10 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
     if(orderId){
       // Serialize competing production allocations for the same order so two
       // simultaneous entries cannot both consume the same remaining order need.
-      await c.query('SELECT id FROM orders WHERE id=$1 FOR UPDATE',[orderId]);
+      const lockedOrder=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
+      if(!lockedOrder) throw new Error('Заказ не найден');
+      if(!['queued','active'].includes(lockedOrder.status))
+        throw new Error('Нельзя записывать производство непосредственно в завершённый, отменённый или архивный заказ');
       const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
       const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL',[orderId,productId])).rows[0].qty;
       if(!requested) throw new Error('В заказе нет выбранного типоразмера');
