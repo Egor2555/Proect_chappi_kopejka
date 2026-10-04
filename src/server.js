@@ -206,6 +206,8 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         const need=Math.max(0,Number(candidate.required_qty)-Number(candidate.done));
         if(!need) continue;
         const move=Math.min(need,remaining);
+        await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'surplus')`,
+          [p.id,candidate.id,productId,move]);
         await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
           VALUES($1,'surplus_transfer',$2,$3,$4,$5,'Автоматическое распределение излишка по очереди')`,
           [productId,move,p.id,candidate.id,req.user.sub]);
