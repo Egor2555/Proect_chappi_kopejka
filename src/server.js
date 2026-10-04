@@ -1042,7 +1042,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   res.status(201).json(result);
 }));
 
-app.get('/api/fund', auth, asyncRoute(async (_req,res) => {
+app.get('/api/fund', auth, roles('admin','brigadier'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT COALESCE(SUM(CASE WHEN entry_type='income' THEN amount_minor
     WHEN entry_type='expense' THEN -amount_minor ELSE 0 END),0)::text balance_minor,
     COALESCE(SUM(CASE WHEN entry_type='income' THEN amount_minor ELSE 0 END),0)::text income_minor,
