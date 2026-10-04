@@ -49,7 +49,9 @@ async function tx(fn) {
   catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
 }
-const asyncRoute = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);\n\nasync function insertBackupRow(client, table, row, userIdMap, upsert=false) {
+const asyncRoute = fn => (req,res,next) => Promise.resolve(fn(req,res,next)).catch(next);
+
+async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
   const mapped = remapUserReferences(table, row, userIdMap);
   const columns = Object.keys(mapped);
   if (!columns.length) return;
