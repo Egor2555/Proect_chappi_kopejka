@@ -1000,7 +1000,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       const nameMap=new Map(names.map(x=>[String(x.id),x.display_name]));
       const frozen=closureRow.totals.earnings
         .filter(x=>req.user.role!=='worker' || String(x.workerId)===String(req.user.workerId))
-        .map(x=>({worker_id:x.workerId,display_name:nameMap.get(String(x.workerId))||'Архивный работник',amount_minor:String(x.amountMinor),work_days:0,daily_details:[]}))
+        .map(x=>({worker_id:x.workerId,display_name:x.displayName||nameMap.get(String(x.workerId))||'Архивный работник',amount_minor:String(x.amountMinor),work_days:0,daily_details:[]}))
         .sort((a,b)=>a.display_name.localeCompare(b.display_name,'ru'));
       earnings={rows:frozen};
     } else earnings={rows:[]};
@@ -1142,8 +1142,11 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       workerTotals.set(happyKopeck.winnerId,(workerTotals.get(happyKopeck.winnerId)||0n)+residualMinor);
     }
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
+    const workerNames=new Map(attendance.flatMap(day=>day.workers.map(person=>[String(person.workerId),person.name])));
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
-      earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
+      earnings:[...workerTotals.entries()].map(([workerId,amount])=>({
+        workerId,displayName:workerNames.get(String(workerId))||'Архивный работник',amountMinor:amount.toString()
+      })),
       ratesEntered:true,
       happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
@@ -1195,7 +1198,7 @@ app.get('/api/archive/months', auth, asyncRoute(async (req,res) => {
     const nameMap=new Map(names.map(x=>[String(x.id),x.display_name]));
     row.totals={...row.totals,earnings:frozen.map(x=>({
       workerId:x.workerId,
-      displayName:nameMap.get(String(x.workerId))||'Архивный работник',
+      displayName:x.displayName||nameMap.get(String(x.workerId))||'Архивный работник',
       amountMinor:String(x.amountMinor)
     }))};
   }
