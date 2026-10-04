@@ -584,6 +584,12 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     if(!entry||entry.voided_at) throw new Error('Запись не найдена или уже отменена');
     const month=String(entry.work_date).slice(0,7)+'-01';
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Закрытый месяц нельзя исправлять обычной операцией');
+    const shippedFromEntry=Number((await c.query(`SELECT COALESCE(SUM(sa.quantity),0)::int qty
+      FROM shipment_allocations sa
+      JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+      WHERE im.production_entry_id=$1`,[entry.id])).rows[0].qty);
+    if(shippedFromEntry>0)
+      throw new Error('Нельзя отменить производство: часть этой производственной партии уже вошла в отгрузку');
     const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id])).rows.map(x=>x.order_id);
     const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[entry.id])).rows;
     // Serialize production reversal against concurrent shipments/other stock changes.
@@ -645,7 +651,9 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
            -COALESCE((SELECT SUM(r.quantity_delta) * -1 FROM inventory_movements r
              WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
         FROM inventory_movements m
-        WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer')
+        WHERE m.product_id=$1
+          AND (m.movement_type IN ('production_in','surplus_transfer')
+            OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
           AND m.quantity_delta>0
         ORDER BY m.created_at,m.id FOR UPDATE`,[productId])).rows;
       let left=take;
@@ -785,7 +793,9 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
              -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r
                WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
           FROM inventory_movements m
-          WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer')
+          WHERE m.product_id=$1
+            AND (m.movement_type IN ('production_in','surplus_transfer')
+              OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
             AND m.quantity_delta>0
           ORDER BY m.created_at,m.id
           FOR UPDATE`,[item.productId])).rows;
