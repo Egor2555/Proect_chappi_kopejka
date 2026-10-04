@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateBackup, validateBackupRelations, REQUIRED_TABLES } = require('../src/backup');
+const { validateBackup, validateBackupRelations, buildRestorePlan, REQUIRED_TABLES } = require('../src/backup');
 
 
 function validBackup() {
@@ -51,4 +51,12 @@ test('backup relation validator rejects dangling references', () => {
   const backup = validBackup();
   backup.tables.production_entries.push({id:'p1',team_id:'missing'});
   assert.throws(() => validateBackupRelations(backup), /Нарушена связь/);
+});
+
+
+test('restore plan is non-destructive dry-run', () => {
+  const plan = buildRestorePlan(validBackup());
+  assert.equal(plan.mode, 'dry-run');
+  assert.equal(plan.destructive, false);
+  assert.equal(plan.passwordHashesRestored, false);
 });
