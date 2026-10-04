@@ -589,7 +589,12 @@ app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res
   res.json(r.rows);
 }));
 
-app.post('/api/admin/restore/dry-run', auth, roles('admin'), asyncRoute(async (req,res) => {\n  const plan = buildRestorePlan(req.body);\n  res.json(plan);\n}));\n\napp.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
+app.post('/api/admin/restore/dry-run', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const plan = buildRestorePlan(req.body);
+  res.json(plan);
+}));
+
+app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const tables=['workers','teams','team_memberships','products','rates','orders','order_items','monthly_worker_earnings',
     'production_entries','production_allocations','attendance_entries','inventory_movements',
     'shipments','shipment_items','payment_entries','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
