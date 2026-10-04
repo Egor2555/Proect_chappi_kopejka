@@ -60,3 +60,16 @@ test('restore plan is non-destructive dry-run', () => {
   assert.equal(plan.destructive, false);
   assert.equal(plan.passwordHashesRestored, false);
 });
+
+
+test('backup relation validator rejects duplicate ids', () => {
+  const backup = validBackup();
+  backup.tables.workers.push({id:'w1'},{id:'w1'});
+  assert.throws(() => validateBackupRelations(backup), /Дублирующийся id/);
+});
+
+test('backup relation validator rejects duplicate usernames', () => {
+  const backup = validBackup();
+  backup.tables.users.push({id:'u1',username:'admin',role:'admin'},{id:'u2',username:'admin',role:'admin'});
+  assert.throws(() => validateBackupRelations(backup), /Дублирующийся username/);
+});
