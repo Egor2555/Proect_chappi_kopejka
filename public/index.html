@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#172b3a"><title>Chappi Edition — Учёт столбов</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar"><div><strong>CHAPPI EDITION</strong><small>Учёт производства столбов 60×40</small></div><div id="userBadge"></div></header>
+  <main>
+    <section id="loginView" class="panel login">
+      <h1>Вход в систему</h1><p class="muted">Введите выданные администратором данные.</p>
+      <form id="loginForm"><label>Логин<input name="username" autocomplete="username" required></label><label>Пароль<input name="password" type="password" autocomplete="current-password" required></label><button>Войти</button></form>
+      <p id="loginError" class="error" role="alert"></p>
+    </section>
+    <section id="appView" hidden>
+      <nav class="tabs" id="tabs">
+        <button data-tab="home" class="active">Главная</button><button data-tab="production">Производство</button><button data-tab="orders">Заказы</button><button data-tab="stock">Склад</button><button data-tab="people">Работники</button><button data-tab="rates" data-admin>Расценки</button><button data-tab="admin" data-admin>Администрирование</button>
+      </nav>
+      <div id="notice" aria-live="polite"></div>
+      <section id="home" class="view"></section>
+      <section id="production" class="view" hidden></section>
+      <section id="orders" class="view" hidden></section>
+      <section id="stock" class="view" hidden></section>
+      <section id="people" class="view" hidden></section>
+      <section id="rates" class="view" hidden></section>
+      <section id="admin" class="view" hidden></section>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body></html>
