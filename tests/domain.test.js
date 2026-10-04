@@ -84,15 +84,16 @@ test('no demand leaves all production as free stock', () => {
   assert.deepEqual(allocateProduction(7, 0, []), { allocations:[], freeStock:7 });
 });
 
-test('Happy Kopeck selects one eligible worker using injected randomness', () => {
-  const result=chooseHappyKopeckWinner(3,['w1','w2','w3'],(min,max)=>1);
+test('Happy Kopeck uses the administrator-selected eligible worker', () => {
+  const result=chooseHappyKopeckWinner(3,['w1','w2','w3'],'w2');
   assert.deepEqual(result,{amountMinor:'3',winnerId:'w2',badge:'🏆'});
 });
 
 test('Happy Kopeck has no winner when no residual remains', () => {
-  assert.deepEqual(chooseHappyKopeckWinner(0,['w1'],()=>0),{amountMinor:'0',winnerId:null,badge:null});
+  assert.deepEqual(chooseHappyKopeckWinner(0,['w1']),{amountMinor:'0',winnerId:null,badge:null});
 });
 
-test('Happy Kopeck rejects missing eligible recipients for a positive residual', () => {
+test('Happy Kopeck rejects missing or ineligible administrator selection', () => {
   assert.throws(()=>chooseHappyKopeckWinner(1,[]),/No eligible workers/);
+  assert.throws(()=>chooseHappyKopeckWinner(1,['w1'],'w2'),/eligible worker/);
 });
