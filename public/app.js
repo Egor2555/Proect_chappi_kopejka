@@ -266,7 +266,12 @@ async function fund(){
 }
 async function archive(){
  const rows=await api('/archive/months');
- $('#archive').innerHTML='<h1>Архив месяцев</h1><div class="card"><p class="muted">Показываются закрытые месяцы за последние шесть месяцев. Закрытые итоги хранятся отдельным снимком.</p>'+rows.map(x=>'<div class="card"><strong>'+escapeHtml(String(x.period_month).slice(0,7))+'</strong><p>Закрыт: '+new Date(x.closed_at).toLocaleString('uk-UA')+'</p><p>Количество: '+(x.totals.total?.quantity??'—')+' · Сумма: '+(x.totals.total?.totalMinor?money(x.totals.total.totalMinor):'—')+'</p></div>').join('')+'</div>'
+ $('#archive').innerHTML='<h1>Архив месяцев</h1><div class="card"><p class="muted">Показываются закрытые месяцы за последние шесть месяцев. Закрытые итоги хранятся отдельным снимком.</p>'+rows.map(x=>{
+   const pay=x.totals?.earnings||[];
+   return '<div class="card"><strong>'+escapeHtml(String(x.period_month).slice(0,7))+'</strong><p>Закрыт: '+new Date(x.closed_at).toLocaleString('uk-UA')+'</p><p>Количество: '+(x.totals.total?.quantity??'—')+' · Сумма: '+(x.totals.total?.totalMinor?money(x.totals.total.totalMinor):'—')+'</p>'+
+     (pay.length?'<h3>Выплаты работникам</h3>'+simpleTable(pay.map(p=>({display_name:p.displayName,amount:money(p.amountMinor)})),[['display_name','Работник'],['amount','Выплата']]):'')+
+     '</div>';
+ }).join('')+'</div>'
 }
 async function profile(){
  $('#profile').innerHTML='<h1>Профиль</h1><div class="card"><h2>Сменить пароль</h2><form id="passwordForm"><label>Текущий пароль<input type="password" name="currentPassword" required autocomplete="current-password"></label><label>Новый пароль (не менее 10 символов)<input type="password" name="newPassword" minlength="10" required autocomplete="new-password"></label><button>Сохранить новый пароль</button></form></div>';
