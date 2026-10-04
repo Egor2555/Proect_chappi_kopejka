@@ -347,6 +347,8 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
           COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[candidate.id])).rows[0].n;
         if(candidateMissing===0) {
           await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
+          // Serialize queue activation so concurrent completions cannot activate two orders.
+          await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
           await c.query(`UPDATE orders SET status='active' WHERE id=(
             SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
           ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
@@ -361,6 +363,8 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[orderId])).rows[0].n;
       if(missing===0) {
         await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
+        // Serialize queue activation so concurrent completions cannot activate two orders.
+        await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
         await c.query(`UPDATE orders SET status='active' WHERE id=(
           SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
         ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
