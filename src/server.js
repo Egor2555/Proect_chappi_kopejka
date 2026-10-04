@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const { calculateMonthlyWorkerEarnings } = require('./domain');
+const { chooseHappyKopeckWinner } = require('./penny');
 const { validateBackup, validateBackupRelations, buildRestorePlan } = require('./backup');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -480,6 +481,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
   const month=String(req.body.month||'');
+  const happyKopeckWinnerId=req.body.happyKopeckWinnerId ? String(req.body.happyKopeckWinnerId) : null;
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
   let result;
@@ -526,12 +528,19 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         [start,earning.workerId,earning.amountMinor,earning.workDays,JSON.stringify(earning.dailyDetails)]);
     }
     const residualMinor=BigInt(calculation.residualMinor);
+    const eligibleWorkerIds=calculation.earnings.filter(x=>BigInt(x.amountMinor)>0n).map(x=>x.workerId);
+    const happyKopeck=chooseHappyKopeckWinner(residualMinor,eligibleWorkerIds,happyKopeckWinnerId);
+    if(residualMinor>0n){
+      await c.query(`INSERT INTO penny_events(period_month,source_minor,distributed_minor,allocation,algorithm_version,created_by,status)
+        VALUES($1,$2,$3,$4,$5,$6,'approved')`,
+        [start,happyKopeck.amountMinor,happyKopeck.amountMinor,JSON.stringify({winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}), 'admin-selected-v1', req.user.sub]);
+    }
     const workerTotals=new Map(calculation.earnings.map(x=>[x.workerId,BigInt(x.amountMinor)]));
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
       earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
       ratesEntered:true,
-      happyKopeck:{status:residualMinor>0n?'pending':'not_needed',residualMinor:residualMinor.toString()}};
+      happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
@@ -590,7 +599,7 @@ app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res
 }));
 
 app.post('/api/admin/restore/dry-run', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const existingUsers = (await pool.query('SELECT id FROM users')).rows.map(r => r.id);
+  const existingUsers = (await pool.query('SELECT id,username FROM users')).rows;
   const plan = buildRestorePlan(req.body, existingUsers);
   res.json(plan);
 }));
