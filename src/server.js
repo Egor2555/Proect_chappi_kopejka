@@ -204,7 +204,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
 app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const teamId=String(req.query.teamId||'');
   const date=String(req.query.date||'');
-  if(!teamId||!/\\d{4}-\\d{2}-\\d{2}/.test(date)) return res.status(400).json({error:'Укажите бригаду и дату'});
+  if(!teamId||!/\d{4}-\d{2}-\d{2}/.test(date)) return res.status(400).json({error:'Укажите бригаду и дату'});
   if(req.user.role==='brigadier' && !(await pool.query(
     'SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
     [req.user.workerId,teamId,date])).rowCount) return res.status(403).json({error:'Можно просматривать только свою бригаду'});
