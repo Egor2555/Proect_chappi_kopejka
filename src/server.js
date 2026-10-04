@@ -520,7 +520,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
         ORDER BY w.display_name`,[start])).rows
     : [];
   res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,
-    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString(),winnerId:closedHappyKopeck?.winnerId||null}});
+    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString(),winnerId:closedHappyKopeck?.winnerId||null},closed:!!closureRow});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
