@@ -192,3 +192,14 @@ CREATE INDEX IF NOT EXISTS idx_production_team_date ON production_entries(team_i
 CREATE INDEX IF NOT EXISTS idx_inventory_product ON inventory_movements(product_id);
 CREATE INDEX IF NOT EXISTS idx_orders_queue ON orders(status, priority DESC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS production_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  production_entry_id UUID NOT NULL REFERENCES production_entries(id) ON DELETE RESTRICT,
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  allocation_type TEXT NOT NULL CHECK (allocation_type IN ('direct','surplus')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_allocations_order_product ON production_allocations(order_id,product_id);
