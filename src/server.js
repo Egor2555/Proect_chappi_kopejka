@@ -513,6 +513,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   let result;
   try {
     result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
     const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
