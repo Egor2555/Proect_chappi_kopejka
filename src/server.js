@@ -662,26 +662,59 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
       const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3) RETURNING id',[sh.id,item.productId,qty])).rows[0];
-      // Consume warehouse stock FIFO and remember exactly which production batches
-      // supplied this shipment. This is the bridge between shipment-month pay and
-      // the real production day/team that earned the money.
-      const batches=(await c.query(`SELECT m.id,m.production_entry_id,
-          (m.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0))::int AS available
-        FROM inventory_movements m
-        WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer') AND m.quantity_delta>0
-        ORDER BY m.created_at,m.id
-        FOR UPDATE`,[item.productId])).rows;
+      // First consume stock that was explicitly assigned to this order.
+      // Assignment already removed it from free warehouse stock, so no second
+      // shipment_out movement is created for that reserved quantity.
       let left=qty;
-      for(const batch of batches){
-        if(left<=0) break;
-        const take=Math.min(left,Number(batch.available));
-        if(take<=0) continue;
-        await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',[shipmentItem.id,batch.id,take]);
-        left-=take;
+      if(orderId){
+        const reserved=(await c.query(`SELECT r.id,r.reference_id,r.production_entry_id,
+            (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity)
+              FROM shipment_allocations sa
+              WHERE sa.inventory_movement_id=r.reference_id),0))::int AS available
+          FROM inventory_movements r
+          WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out'
+            AND r.reference_id IS NOT NULL
+          ORDER BY r.created_at,r.id FOR UPDATE`,[item.productId,orderId])).rows;
+        for(const reservation of reserved){
+          if(left<=0) break;
+          const available=Math.max(0,Number(reservation.available));
+          if(!available) continue;
+          const take=Math.min(left,available);
+          await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
+            [shipmentItem.id,reservation.reference_id,take]);
+          left-=take;
+        }
       }
-      if(left>0) throw new Error('Часть складского остатка не имеет производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
-      await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
-        VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,[item.productId,-qty,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
+
+      // Then consume any remaining free warehouse stock FIFO.
+      let freeTaken=0;
+      if(left>0){
+        const batches=(await c.query(`SELECT m.id,m.production_entry_id,
+            (m.quantity_delta
+             -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0)
+             -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r
+               WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+          FROM inventory_movements m
+          WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer')
+            AND m.quantity_delta>0
+          ORDER BY m.created_at,m.id
+          FOR UPDATE`,[item.productId])).rows;
+        for(const batch of batches){
+          if(left<=0) break;
+          const take=Math.min(left,Math.max(0,Number(batch.available)));
+          if(take<=0) continue;
+          await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
+            [shipmentItem.id,batch.id,take]);
+          left-=take;
+          freeTaken+=take;
+        }
+      }
+      if(left>0) throw new Error('Часть складского остатка не имеет свободной производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
+      if(freeTaken>0){
+        await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
+          VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,
+          [item.productId,-freeTaken,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
+      }
     }
     await audit(c,req.user.sub,'create','shipment',sh.id,null,sh);
     return sh;
