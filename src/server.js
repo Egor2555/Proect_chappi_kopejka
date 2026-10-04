@@ -398,7 +398,7 @@ app.get('/api/fund', auth, asyncRoute(async (_req,res) => {
 
 app.post('/api/fund', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {entryDate,entryType,amountMinor,note}=req.body;
-  if(!entryDate||!['income','expense','adjustment'].includes(entryType)||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0||!note)
+  if(!entryDate||!['income','expense'].includes(entryType)||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0||!note)
     return res.status(400).json({error:'Проверьте дату, тип, сумму и пояснение'});
   const result=await tx(async c=>{
     const entry=(await c.query('INSERT INTO fund_entries(entry_date,entry_type,amount_minor,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
