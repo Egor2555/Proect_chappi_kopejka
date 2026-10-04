@@ -1119,6 +1119,9 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     // the active state back to the single-brigade rule.
     await c.query("UPDATE teams SET active=false");
     await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
+    // Restore may come from an older build that allowed several active orders.
+    // Keep the oldest/highest-priority active order and return the others to the queue.
+    await c.query("UPDATE orders SET status='queued' WHERE status='active' AND id <> (SELECT id FROM orders WHERE status='active' ORDER BY priority DESC,created_at,id LIMIT 1)");
     await audit(c,req.user.sub,'restore_business_data','backup',null,null,{format:backup.format,createdAt:backup.createdAt,tableCounts:plan.tableCounts});
     return {restoredTables:tables.length+1,tableCounts:plan.tableCounts};
   });
@@ -1161,6 +1164,8 @@ async function start() {
   await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
   await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
   await ensureAccessProfiles();
+  // Startup self-heals the single-active-order invariant after legacy restores.
+  await pool.query("UPDATE orders SET status='queued' WHERE status='active' AND id <> (SELECT id FROM orders WHERE status='active' ORDER BY priority DESC,created_at,id LIMIT 1)");
   const initial=process.env.INITIAL_ADMIN_PASSWORD;
   if(initial) {
     const username=process.env.INITIAL_ADMIN_USERNAME || 'admin';
