@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const { calculateMonthlyWorkerEarnings } = require('./domain');
 const { chooseHappyKopeckWinner } = require('./penny');
-const { validateBackup, validateBackupRelations, buildRestorePlan, remapUserReferences } = require('./backup');
+const { validateBackup, validateBackupRelations, buildRestorePlan, remapUserReferences, RESTORE_ORDER } = require('./backup');
 const fs = require('node:fs');
 const path = require('node:path');
 
