@@ -241,7 +241,22 @@ app.post('/api/auth/login', asyncRoute(async (req,res) => {
       // Так случайные ошибки входа не могут заблокировать администратора.
       const target = brigadier;
       if (target) {
-        if (target.pin_locked) return res.status(423).json({error:'Профиль бригадира заблокирован после 5 неверных попыток. Обратитесь к администратору.',adminRecoveryAvailable:!!admin?.pin_locked});
+        if (target.pin_locked) {
+          // После блокировки PIN бригадира дальнейшие неверные попытки относятся
+          // к администратору; верный admin PIN по-прежнему проверяется выше.
+          if (admin && !admin.pin_locked) {
+            const failedAdmin=await recordPinFailure(admin);
+            await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,false)',[admin.id,'admin']);
+            return res.status(failedAdmin.pin_locked?423:401).json({
+              error:failedAdmin.pin_locked?'Профиль администратора заблокирован после 5 неверных попыток. Используйте восстановление доступа.':'Неверный PIN',
+              adminRecoveryAvailable:!!failedAdmin.pin_locked
+            });
+          }
+          return res.status(423).json({
+            error:admin?.pin_locked?'Профиль администратора заблокирован. Используйте восстановление доступа.':'Профиль бригадира заблокирован после 5 неверных попыток. Обратитесь к администратору.',
+            adminRecoveryAvailable:!!admin?.pin_locked
+          });
+        }
         const failed=await recordPinFailure(target);
         await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,false)',[target.id,'brigadier']);
         return res.status(failed.pin_locked?423:401).json({error:failed.pin_locked?'Профиль бригадира заблокирован после 5 неверных попыток. Обратитесь к администратору.':'Неверный PIN'});
