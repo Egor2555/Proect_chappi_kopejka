@@ -38,7 +38,7 @@ jobs:
           INITIAL_ADMIN_PASSWORD: SmokeTestAdminPassword123
           JWT_SECRET: ci-only-secret-that-is-long-and-random-enough
         run: |
-          npm start > /tmp/chappi-server.log 2>&1 &
+          node src/server.js > /tmp/chappi-server.log 2>&1 &
           SERVER_PID=$!
           for attempt in {1..30}; do
             if curl --silent --fail http://127.0.0.1:8080/api/health; then
