@@ -15,21 +15,21 @@ $('#adminRecoveryStart').addEventListener('click',async()=>{const b=$('#adminRec
 $('#adminRecoveryForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/recovery/complete',{method:'POST',body:JSON.stringify({code:f.get('code'),newPin:f.get('newPin')})});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').reset();$('#adminRecoveryForm').hidden=true;$('#adminRecoveryStart').hidden=true;$('#loginError').textContent='';$('#loginForm [name=pin]').value='';}catch(err){$('#recoveryError').textContent=err.message}});
 async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=state.user.username+' · '+roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=state.user.role==='worker');document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
-function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
+function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+p.length_m+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return state.teams[0]?.name||'Бригада 1'}
 function singleTeamId(){return state.teams[0]?.id||''}
 async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='fund')return fund();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
-async function home(){const d=await api('/dashboard');const todayRows=d.today.map(x=>({...x,length_m:(Number(x.length_mm)/1000)}));$('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(todayRows,[['length_m','Длина, м'],['quantity','Количество']])+'</div>'}
+async function home(){const d=await api('/dashboard');const todayRows=d.today.map(x=>({...x,length_m:Number(x.length_m)}));$('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(todayRows,[['length_m','Длина, м'],['quantity','Количество']])+'</div>'}
 function orderCards(rows,editable=false){
  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
  return rows.map((o,index)=>{
    const orderHighlight=o.status==='active'?'order-active':(o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued')?'order-next':'');
    const warehouseForm=(['admin','brigadier'].includes(state.user.role)&&['queued','active'].includes(o.status))
     ? '<form class="warehouseAssignForm card" data-id="'+o.id+'"><strong>Выдать со склада в заказ</strong><div class="row"><label>Типоразмер<select name="productId">'+
-      (o.items||[]).map(i=>'<option value="'+(i.productId||i.product_id)+'">'+((i.lengthMm||i.length_mm)/1000)+' м · '+i.remaining+' шт. осталось</option>').join('')+
+      (o.items||[]).map(i=>'<option value="'+(i.productId||i.product_id)+'">'+((i.lengthM||i.length_m))+' м · '+i.remaining+' шт. осталось</option>').join('')+
       '</select></label><label>Количество<input name="quantity" type="number" min="1" step="1" required></label><button>Выдать со склада</button></div></form>' : '';
    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
-     ((o.items||[]).map(i=>'<p>'+((i.lengthMm||i.length_mm)/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
+     ((o.items||[]).map(i=>'<p>'+((i.lengthM||i.length_m))+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
      (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
      (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
@@ -47,7 +47,7 @@ async function production(){
  const orderRows=activeItems.map(i=>{
    const product=state.products.find(p=>p.id===(i.productId||i.product_id));
    if(!product)return '';
-   return '<div class="row productionItem"><label>'+((product.length_mm)/1000)+' м · '+product.section_width_mm+'×'+product.section_height_mm+
+   return '<div class="row productionItem"><label>'+(product.length_m)+' м · '+product.section_width_mm+'×'+product.section_height_mm+
      '<input name="qty_'+product.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Количество"></label></div>';
  }).join('');
  $('#production').innerHTML='<h1>Ежедневное производство</h1>'+
@@ -71,7 +71,7 @@ async function production(){
    const available=state.products.filter(p=>p.active&&!activeIds.has(p.id)&&!used.includes(p.id));
    if(!available.length){notify('Других активных типоразмеров для добавления нет','error');return}
    const row=document.createElement('div');row.className='row extraProductionRow';
-   row.innerHTML='<label>Типоразмер<select name="extraProductId">'+available.map(p=>'<option value="'+p.id+'">'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')+
+   row.innerHTML='<label>Типоразмер<select name="extraProductId">'+available.map(p=>'<option value="'+p.id+'">'+p.length_m+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')+
      '</select></label><label>Количество<input name="extraQuantity" type="number" min="1" step="1" inputmode="numeric" required></label><button type="button" class="removeExtra">Убрать</button>';
    row.querySelector('.removeExtra').onclick=()=>row.remove();extraBox.append(row);
  };
@@ -111,7 +111,7 @@ async function loadProductionHistory(){
  const rows=await api('/production?date='+encodeURIComponent(date));
  let box=view.querySelector('#productionHistory');
  if(!box){box=document.createElement('div');box.id='productionHistory';box.className='card';view.append(box)}
- box.innerHTML='<h2>Записи за выбранный день</h2>'+rows.map(r=>'<div class="row"><div><strong>'+(r.length_mm/1000)+' м</strong> · '+r.quantity+' шт.<br><small>'+escapeHtml(r.team_name)+' · '+escapeHtml(r.order_number||'Без заказа')+' · '+escapeHtml(r.created_by_name)+'</small></div>'+(state.user.role==='admin'?'<button class="voidProduction" data-id="'+r.id+'">Исправить запись</button>':'')+'</div>').join('')+(rows.length?'':'<p class="empty">За этот день записей пока нет</p>');
+ box.innerHTML='<h2>Записи за выбранный день</h2>'+rows.map(r=>'<div class="row"><div><strong>'+r.length_m+' м</strong> · '+r.quantity+' шт.<br><small>'+escapeHtml(r.team_name)+' · '+escapeHtml(r.order_number||'Без заказа')+' · '+escapeHtml(r.created_by_name)+'</small></div>'+(state.user.role==='admin'?'<button class="voidProduction" data-id="'+r.id+'">Исправить запись</button>':'')+'</div>').join('')+(rows.length?'':'<p class="empty">За этот день записей пока нет</p>');
  box.querySelectorAll('.voidProduction').forEach(b=>b.onclick=async()=>{const reason=prompt('Укажи причину отмены записи. После отмены введи правильное количество заново.');if(!reason)return;try{await api('/production/'+b.dataset.id+'/void',{method:'POST',body:JSON.stringify({reason})});notify('Запись отменена. Введи корректное производство заново.');await loadProductionHistory()}catch(err){notify(err.message,'error')}})
 }
 async function orders(){state.orders=await api('/orders');$('#orders').innerHTML='<h1>Заказы</h1>'+orderCards(state.orders,true)+(state.user.role==='admin'?'<div class="card"><h2>Новый заказ</h2><form id="orderForm"><label>Номер заказа<input name="orderNumber" required></label><label>Название<input name="title" required></label><label>Приоритет (0 — обычный)<input name="priority" type="number" min="0" value="0"></label><div id="orderItems"><div class="row"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label></div></div><button type="button" id="addOrderItem">Добавить типоразмер</button><button type="submit">Создать заказ</button></form></div>':'');const form=$('#orderForm');if(form){
@@ -152,13 +152,13 @@ async function orders(){state.orders=await api('/orders');$('#orders').innerHTML
    }catch(err){notify(err.message,'error')}
  })
 }
-async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows,[['length_mm','Длина, мм'],['quantity','Остаток']])+'</div>'}
+async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows,[['length_m','Длина, м'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
  const payments=state.user.role==='admin'?await api('/payments'):[];
  const canShip=['admin','brigadier'].includes(state.user.role);
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.lengthMm/1000)+' м × '+i.quantity).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.lengthM/1000)+' м × '+i.quantity).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отгрузки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отгрузок пока нет.</p>')+'</div>'+
  (canShip?'<div class="card"><h2>Новая отгрузка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><div class="row shipmentItem"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="quantity" type="number" min="1" required></label></div></div><button type="button" id="shipAll">Отгрузить всё по выбранному заказу</button><button type="button" id="addShipmentItem">+ Добавить позицию</button><button type="submit">Зафиксировать отгрузку</button></form></div>':'')+
  (state.user.role==='admin'?'<div class="card"><h2>Зачесть оплату по отгрузке</h2><form id="paymentForm"><label>Отгрузка<select name="shipmentId">'+rows.map(x=>'<option value="'+x.id+'">'+escapeHtml(x.shipment_number)+'</option>').join('')+'</select></label><label>Сумма, грн<input name="amount" type="number" min="0" step="0.01" required></label><label>Примечание<input name="note"></label><button>Зачесть оплату</button></form><h3>История оплат</h3>'+simpleTable(payments.map(p=>({...p,amount:money(p.amount_minor)})),[['shipment_number','Отгрузка'],['amount','Сумма'],['credited_at','Дата']])+'</div>':'');
@@ -177,7 +177,7 @@ async function shipments(){
      itemsBox.replaceChildren();
      (order.items||[]).filter(i=>Number(i.remaining)>0).forEach(i=>{
        const row=document.createElement('div');row.className='row shipmentItem';
-       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+i.productId+'">'+((i.lengthMm)/1000)+' м</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+i.remaining+'" value="'+i.remaining+'" required></label>';
+       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+i.productId+'">'+((i.lengthM)/1000)+' м</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+i.remaining+'" value="'+i.remaining+'" required></label>';
        itemsBox.append(row);
      });
      if(!itemsBox.children.length)notify('По этому заказу нечего отгружать','error');else notify('Подставлены все остатки заказа');
@@ -233,7 +233,7 @@ async function reports(){
  const load=async()=>{
    const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
    const missing=r.missingRates||[];
-   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(Number(x.length_mm)/1000)+' м'),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
+   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+Number(x.length_m)+' м'),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
    const financeVisible=state.user.role!=='worker';
    let html='<h2>Производство за '+escapeHtml(m)+'</h2>';
    html+=financeVisible
@@ -242,7 +242,7 @@ async function reports(){
    html+=financeVisible
      ? '<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>'
      : '<p><strong>Всего:</strong> '+r.total.quantity+' шт.</p>';
-   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(Number(x.length_mm)/1000)+' м')).join(', ')+'</p>';
+   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+Number(x.length_m)+' м')).join(', ')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
    if(state.user.role==='admin') { const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>'; else { html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>'; html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>'; } }
    $('#reportResult').innerHTML=html;
@@ -260,8 +260,8 @@ async function rates(){
  const canEdit=state.user.role==='admin';
  $('#rates').innerHTML='<h1>Расценки</h1><div class="card"><p class="muted">Расценки и история цен доступны только администратору. В течение месяца они не требуются для ввода производства; фактические цены вводятся при закрытии месяца.</p>'+
  (canEdit?'<h2>Внести или изменить расценку</h2><form id="rateForm"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Месяц<input name="periodMonth" type="month" required></label><label>Цена за штуку, грн<input name="amount" type="number" min="0" step="0.01" required></label><button>Сохранить расценку</button></form>':'<p class="muted">Ввод и изменение расценок доступен только администратору.</p>')+'</div>'+
- (canEdit?'<div class="card"><h2>Справочник типоразмеров</h2>'+state.products.map(p=>'<p>'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+' · '+(p.active?'Активен':'Архив')+(p.active?' <button class="archiveProduct" data-id="'+p.id+'">В архив</button>':'')+'</p>').join('')+'<form id="productForm"><h3>Добавить типоразмер</h3><label>Код<input name="code" required placeholder="Например 60x40-3200"></label><label>Длина, мм<input name="lengthMm" type="number" min="1" required></label><label>Ширина сечения, мм<input name="sectionWidthMm" type="number" min="1" value="60" required></label><label>Высота сечения, мм<input name="sectionHeightMm" type="number" min="1" value="40" required></label><button>Добавить типоразмер</button></form></div>':'')+
- '<div class="card"><h2>История расценок</h2>'+simpleTable(rows.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(Number(x.length_mm)/1000)+' м'),period:String(x.period_month).slice(0,7),amount:money(x.amount_minor)})),[['size','Типоразмер'],['period','Месяц'],['amount','Цена, грн']])+'</div>';
+ (canEdit?'<div class="card"><h2>Справочник типоразмеров</h2>'+state.products.map(p=>'<p>'+p.length_m+' м · '+p.section_width_mm+'×'+p.section_height_mm+' · '+(p.active?'Активен':'Архив')+(p.active?' <button class="archiveProduct" data-id="'+p.id+'">В архив</button>':'')+'</p>').join('')+'<form id="productForm"><h3>Добавить типоразмер</h3><label>Код<input name="code" required placeholder="Например 60x40-3200"></label><label>Длина, м<input name="lengthM" type="number" min="0.001" step="0.001" required></label><label>Ширина сечения, мм<input name="sectionWidthMm" type="number" min="1" value="60" required></label><label>Высота сечения, мм<input name="sectionHeightMm" type="number" min="1" value="40" required></label><button>Добавить типоразмер</button></form></div>':'')+
+ '<div class="card"><h2>История расценок</h2>'+simpleTable(rows.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+Number(x.length_m)+' м'),period:String(x.period_month).slice(0,7),amount:money(x.amount_minor)})),[['size','Типоразмер'],['period','Месяц'],['amount','Цена, грн']])+'</div>';
  const rf=$('#rateForm');if(rf)rf.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/rates',{method:'POST',body:JSON.stringify({productId:f.get('productId'),periodMonth:f.get('periodMonth')+'-01',amountMinor:Math.round(Number(f.get('amount'))*100)})});notify('Расценка сохранена');rates()}catch(err){notify(err.message,'error')}});
  const pf=$('#productForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(pf));try{await api('/products',{method:'POST',body:JSON.stringify(d)});notify('Типоразмер добавлен');await loadBase();rates()}catch(err){notify(err.message,'error')}});
  document.querySelectorAll('.archiveProduct').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести типоразмер в архив? История останется доступной.'))return;try{await api('/products/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Типоразмер архивирован');await loadBase();rates()}catch(err){notify(err.message,'error')}})
