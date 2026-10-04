@@ -21,6 +21,7 @@ async function must(path, options, expected=200) {
   await must('/api/health');
   const adminLogin=await must('/api/auth/login',{method:'POST',body:{username:process.env.INITIAL_ADMIN_USERNAME||'admin',password:process.env.INITIAL_ADMIN_PASSWORD}});
   const admin=adminLogin.token;
+  await must('/api/dashboard',{token:admin});
   const products=await must('/api/products',{token:admin});
   assert.equal(products.length,6);
   const teams=await must('/api/teams',{token:admin});
@@ -33,6 +34,9 @@ async function must(path, options, expected=200) {
   const worker=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Test Worker'}},201);
   await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:worker.id,teamId:team.id,validFrom:today}},201);
   await must('/api/users',{token:admin,method:'POST',body:{username:'ci-worker',password:'TestWorkerPassword123',role:'worker',workerId:worker.id}},201);
+  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id]}});
+  const attendance=await must('/api/attendance?date='+today,{token:admin});
+  assert.equal(attendance.length,1);
 
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}},201);
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
@@ -56,6 +60,8 @@ async function must(path, options, expected=200) {
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
+  const productionHistory=await must('/api/production?date='+today,{token:admin});
+  assert.equal(productionHistory.length,1);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(report.total.quantity,3);
   assert.equal(report.total.totalMinor,'375');
@@ -78,6 +84,8 @@ async function must(path, options, expected=200) {
 
   const log=await must('/api/admin/login-log',{token:admin});
   assert.ok(log.length>=2);
+  const archive=await must('/api/archive/months',{token:admin});
+  assert.ok(archive.length>=1);
   const backup=await must('/api/admin/export',{token:admin});
   assert.ok(backup.tables.workers.length>=1);
   assert.ok(backup.tables.login_log.length>=2);
