@@ -36,20 +36,65 @@ function orderCards(rows,editable=false){
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 async function production(){
  const canEdit=['admin','brigadier'].includes(state.user.role);
- const rows=state.products.filter(p=>p.active).map(p=>'<div class="row productionItem"><label>'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'<input name="qty_'+p.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Количество"></label></div>').join('');
- $('#production').innerHTML='<h1>Ежедневное производство</h1><div class="card"><form id="productionForm"><label>Дата<input name="workDate" type="date" required value="'+localDate()+'"></label><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p><label>Заказ (необязательно)<select name="orderId"><option value="">Без привязки к заказу</option>'+state.orders.filter(o=>['queued','active'].includes(o.status)).map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('')+'</select></label><h3>Количество за день по длинам</h3>'+rows+'<label>Примечание<textarea name="note" rows="2"></textarea></label><button '+(!canEdit?'disabled':'')+'>Сохранить дневное производство</button></form></div><p class="muted">Вводится общий фактический выпуск бригады за день. Заполните только те длины, которые сегодня производили. Расценка фиксируется отдельно для каждой записи.</p>';
+ const activeOrder=state.orders.find(o=>o.status==='active')||null;
+ const activeItems=activeOrder?.items||[];
+ const activeIds=new Set(activeItems.map(i=>i.productId||i.product_id));
+ const orderRows=activeItems.map(i=>{
+   const product=state.products.find(p=>p.id===(i.productId||i.product_id));
+   if(!product)return '';
+   return '<div class="row productionItem"><label>'+((product.length_mm)/1000)+' м · '+product.section_width_mm+'×'+product.section_height_mm+
+     '<input name="qty_'+product.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Количество"></label></div>';
+ }).join('');
+ $('#production').innerHTML='<h1>Ежедневное производство</h1>'+
+ '<div class="card"><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p>'+
+ (activeOrder?'<p><strong>Активный заказ:</strong> '+escapeHtml(activeOrder.order_number)+' — '+escapeHtml(activeOrder.title)+'</p>'+
+ '<h3>Позиции активного заказа</h3>'+(orderRows||'<p class="empty">В заказе нет доступных позиций.</p>'):
+ '<p class="empty">Сейчас активного заказа нет. Производство можно записать как дополнительный выпуск на склад.</p>')+
+ '<div id="extraProductionRows"></div>'+
+ '<button type="button" id="addExtraProduction">+ Добавить типоразмер</button></div>'+
+ '<div class="card"><form id="productionForm">'+
+ '<label>Дата<input name="workDate" type="date" required value="'+localDate()+'"></label>'+
+ '<input type="hidden" name="activeOrderId" value="'+(activeOrder?.id||'')+'">'+
+ '<div class="card"><h3>Дополнительные типоразмеры</h3><p class="muted">Сюда добавляй изделия не из активного заказа. Они автоматически пойдут следующему подходящему заказу, а если такого нет — на склад.</p></div>'+
+ '<label>Примечание<textarea name="note" rows="2"></textarea></label>'+
+ '<button type="submit" '+(!canEdit?'disabled':'')+'>Сохранить дневное производство</button></form></div>'+
+ '<p class="muted">В основной части показываются только позиции активного заказа. Дополнительные типоразмеры добавляются отдельно.</p>';
+
+ const extraBox=$('#extraProductionRows');
+ const addExtra=()=>{
+   const used=[...extraBox.querySelectorAll('select')].map(x=>x.value);
+   const available=state.products.filter(p=>p.active&&!activeIds.has(p.id)&&!used.includes(p.id));
+   if(!available.length){notify('Других активных типоразмеров для добавления нет','error');return}
+   const row=document.createElement('div');row.className='row extraProductionRow';
+   row.innerHTML='<label>Типоразмер<select name="extraProductId">'+available.map(p=>'<option value="'+p.id+'">'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')+
+     '</select></label><label>Количество<input name="extraQuantity" type="number" min="1" step="1" inputmode="numeric" required></label><button type="button" class="removeExtra">Убрать</button>';
+   row.querySelector('.removeExtra').onclick=()=>row.remove();extraBox.append(row);
+ };
+ $('#addExtraProduction').onclick=addExtra;
+
  $('#productionForm').addEventListener('submit',async e=>{
-  e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const items=state.products.map(p=>({productId:p.id,quantity:Number(data.get('qty_'+p.id)||0)})).filter(x=>x.quantity>0);
-  if(!items.length){notify('Укажите количество хотя бы по одной длине','error');return}
-  const button=form.querySelector('button[type="submit"]');button.disabled=true;let saved=0;
-  try{
-   for(const item of items){
-    await api('/production',{method:'POST',body:JSON.stringify({workDate:data.get('workDate'),productId:item.productId,orderId:data.get('orderId')||null,quantity:item.quantity,note:data.get('note')||''})});
-    saved++;
+   e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const payload=[];
+   if(activeOrder){
+     activeItems.forEach(i=>{
+       const productId=i.productId||i.product_id;const qty=Number(data.get('qty_'+productId)||0);
+       if(qty>0)payload.push({productId,quantity:qty,orderId:activeOrder.id});
+     });
    }
-   notify('Сохранено позиций: '+saved,'success');await loadBase();production();
-  }catch(err){notify('Сохранено позиций: '+saved+'. Ошибка: '+err.message,'error')}
-  finally{button.disabled=false}
+   extraBox.querySelectorAll('.extraProductionRow').forEach(row=>{
+     const productId=row.querySelector('[name="extraProductId"]').value;
+     const quantity=Number(row.querySelector('[name="extraQuantity"]').value||0);
+     if(quantity>0)payload.push({productId,quantity,orderId:null});
+   });
+   if(!payload.length){notify('Укажите количество хотя бы по одной позиции','error');return}
+   const button=form.querySelector('button[type="submit"]');button.disabled=true;let saved=0;
+   try{
+     for(const item of payload){
+       await api('/production',{method:'POST',body:JSON.stringify({workDate:data.get('workDate'),productId:item.productId,orderId:item.orderId,quantity:item.quantity,note:data.get('note')||''})});
+       saved++;
+     }
+     notify('Сохранено позиций: '+saved,'success');await loadBase();production();
+   }catch(err){notify('Сохранено позиций: '+saved+'. Ошибка: '+err.message,'error')}
+   finally{button.disabled=false}
  });
  $('#productionForm [name="workDate"]').addEventListener('change',loadProductionHistory);
  await loadProductionHistory();
