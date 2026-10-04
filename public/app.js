@@ -31,6 +31,7 @@ function orderCards(rows,editable=false){
      warehouseForm+
      (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
      (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
+     (state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)?'<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>':'')+
      (state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+
      '</div>';
  }).join('');
@@ -138,6 +139,16 @@ async function orders(){state.orders=await api('/orders');$('#orders').innerHTML
  });
  document.querySelectorAll('.priorityForm').forEach(pf=>pf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/orders/'+pf.dataset.id+'/priority',{method:'PATCH',body:JSON.stringify({priority:Number(new FormData(pf).get('priority'))})});notify('Приоритет изменён');orders()}catch(err){notify(err.message,'error')}}));
  document.querySelectorAll('.archiveOrder').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести завершённый заказ в архив? История останется.'))return;try{await api('/orders/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Заказ архивирован');orders()}catch(err){notify(err.message,'error')}})
+ document.querySelectorAll('.cancelOrder').forEach(b=>b.onclick=async()=>{
+   const reason=prompt('Укажи причину отмены заказа:');
+   if(!reason||!reason.trim())return;
+   if(!confirm('Отменить заказ? Отгруженная часть сохранится в истории, незатребованный остаток вернётся на склад.'))return;
+   try{
+     await api('/orders/'+b.dataset.id+'/cancel',{method:'POST',body:JSON.stringify({reason:reason.trim()})});
+     notify('Заказ отменён. Незатребованный остаток возвращён на склад.','success');
+     await loadBase();orders();
+   }catch(err){notify(err.message,'error')}
+ })
 }
 async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows,[['length_mm','Длина, мм'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
