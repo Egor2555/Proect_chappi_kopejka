@@ -253,3 +253,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_ciphertext TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_locked BOOLEAN NOT NULL DEFAULT FALSE;
+
+
+CREATE TABLE IF NOT EXISTS shipment_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_item_id UUID NOT NULL REFERENCES shipment_items(id) ON DELETE RESTRICT,
+  inventory_movement_id UUID NOT NULL REFERENCES inventory_movements(id) ON DELETE RESTRICT,
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(shipment_item_id, inventory_movement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_shipment_allocations_inventory ON shipment_allocations(inventory_movement_id);
