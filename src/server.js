@@ -486,11 +486,8 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
   const teamId=singleTeam.id;
-  if(req.user.role==='brigadier') {
-    const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
-      [req.user.workerId,teamId,workDate]);
-    if(!allowed.rowCount) return res.status(403).json({error:'Можно записывать производство только своей бригады'});
-  }
+  // Chappi Edition has exactly one brigade; the brigadier profile may manage it
+  // without being a worker-member of that brigade.
   const result=await tx(async c=>{
     const month=String(workDate).slice(0,7)+'-01';
     const closed=(await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
@@ -571,8 +568,7 @@ app.get('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (r
   const date=String(req.query.date||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const params=[date];
-  let teamFilter='';
-  if(req.user.role==='brigadier') { params.push(req.user.workerId); teamFilter=' AND e.team_id IN (SELECT team_id FROM team_memberships WHERE worker_id=$2 AND valid_from<=$1 AND (valid_to IS NULL OR valid_to>=$1))'; }
+  const teamFilter=' AND e.team_id=(SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1)';
   const r=await pool.query(`SELECT e.*,p.length_mm,p.section_width_mm,p.section_height_mm,t.name team_name,o.order_number,u.username created_by_name
     FROM production_entries e JOIN products p ON p.id=e.product_id JOIN teams t ON t.id=e.team_id
     LEFT JOIN orders o ON o.id=e.order_id JOIN users u ON u.id=e.created_by
