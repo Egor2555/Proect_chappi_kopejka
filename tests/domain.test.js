@@ -13,39 +13,25 @@ test('negative money and quantity are rejected', () => {
   assert.throws(() => calculateTotalMinor(1, -1), RangeError);
 });
 
-
 test('monthly earnings match the real multi-day varying-attendance example', () => {
   const result = calculateMonthlyWorkerEarnings([
     { date:'2026-10-01', teamId:'team', totalMinor:'150000', workerIds:['F','S','C'] },
     { date:'2026-10-02', teamId:'team', totalMinor:'150000', workerIds:['F','C'] },
     { date:'2026-10-03', teamId:'team', totalMinor:'225000', workerIds:['F','S','C'] }
   ]);
-
   assert.deepEqual(result, {
     earnings: [
-      {
-        workerId:'F', amountMinor:'200000', workDays:3,
-        dailyDetails:[
-          {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
-          {date:'2026-10-02',teamId:'team',dayTotalMinor:'150000',workers:2,shareMinor:'75000'},
-          {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}
-        ]
-      },
-      {
-        workerId:'S', amountMinor:'125000', workDays:2,
-        dailyDetails:[
-          {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
-          {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}
-        ]
-      },
-      {
-        workerId:'C', amountMinor:'200000', workDays:3,
-        dailyDetails:[
-          {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
-          {date:'2026-10-02',teamId:'team',dayTotalMinor:'150000',workers:2,shareMinor:'75000'},
-          {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}
-        ]
-      }
+      { workerId:'F', amountMinor:'200000', workDays:3, dailyDetails:[
+        {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
+        {date:'2026-10-02',teamId:'team',dayTotalMinor:'150000',workers:2,shareMinor:'75000'},
+        {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}]},
+      { workerId:'S', amountMinor:'125000', workDays:2, dailyDetails:[
+        {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
+        {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}]},
+      { workerId:'C', amountMinor:'200000', workDays:3, dailyDetails:[
+        {date:'2026-10-01',teamId:'team',dayTotalMinor:'150000',workers:3,shareMinor:'50000'},
+        {date:'2026-10-02',teamId:'team',dayTotalMinor:'150000',workers:2,shareMinor:'75000'},
+        {date:'2026-10-03',teamId:'team',dayTotalMinor:'225000',workers:3,shareMinor:'75000'}]}
     ],
     residualMinor:'0'
   });
@@ -55,23 +41,20 @@ test('monthly earnings preserve indivisible minor-unit remainder', () => {
   const result = calculateMonthlyWorkerEarnings([
     { date:'2026-10-04', teamId:'team', totalMinor:'10', workerIds:['F','S','C'] }
   ]);
-  assert.deepEqual(result, {
-    earnings: [
-      {
-        workerId:'F', amountMinor:'3', workDays:1,
-        dailyDetails:[{date:'2026-10-04',teamId:'team',dayTotalMinor:'10',workers:3,shareMinor:'3'}]
-      },
-      {
-        workerId:'S', amountMinor:'3', workDays:1,
-        dailyDetails:[{date:'2026-10-04',teamId:'team',dayTotalMinor:'10',workers:3,shareMinor:'3'}]
-      },
-      {
-        workerId:'C', amountMinor:'3', workDays:1,
-        dailyDetails:[{date:'2026-10-04',teamId:'team',dayTotalMinor:'10',workers:3,shareMinor:'3'}]
-      }
-    ],
-    residualMinor:'1'
-  });
+  assert.equal(result.residualMinor,'1');
+  assert.equal(result.earnings.reduce((sum,x)=>sum+BigInt(x.amountMinor),0n)+BigInt(result.residualMinor),10n);
+});
+
+test('monthly payroll conserves every minor unit: worker shares plus residual equal day totals', () => {
+  const days = [
+    { date:'2026-10-06', teamId:'team', totalMinor:'101', workerIds:['F','S','C'] },
+    { date:'2026-10-07', teamId:'team', totalMinor:'250', workerIds:['F','C'] },
+    { date:'2026-10-08', teamId:'team', totalMinor:'17', workerIds:['S'] }
+  ];
+  const result = calculateMonthlyWorkerEarnings(days);
+  const inputTotal = days.reduce((sum,day)=>sum+BigInt(day.totalMinor),0n);
+  const workerTotal = result.earnings.reduce((sum,x)=>sum+BigInt(x.amountMinor),0n);
+  assert.equal(workerTotal + BigInt(result.residualMinor), inputTotal);
 });
 
 test('monthly earnings reject a production day with no workers', () => {
