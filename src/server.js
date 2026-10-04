@@ -507,6 +507,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const attendanceMap=new Map(attendance.map(x=>[String(x.work_date)+'|'+x.team_id,x]));
     const workerTotals=new Map();
     const workerDetails=new Map();
+    let residualMinor=0n;
     for(const day of prodDays){
       const a=attendanceMap.get(String(day.work_date)+'|'+day.team_id);
       if(!a || Number(a.worker_count)<1) throw new Error('Нет отмеченных работников: '+String(day.work_date));
@@ -522,12 +523,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         if(!workerDetails.has(wid)) workerDetails.set(wid,[]);
         workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:share.toString()});
       }
-      if(remainder>0n){
-        for(const person of a.workers){
-          if(!workerDetails.has(person.workerId)) workerDetails.set(person.workerId,[]);
-          workerDetails.get(person.workerId).push({date:String(day.work_date),remainderMinor:remainder.toString()});
-        }
-      }
+      residualMinor += remainder;
     for(const [workerId,amount] of workerTotals){
       const days=workerDetails.get(workerId).filter(x=>x.shareMinor).length;
       await c.query(`INSERT INTO monthly_worker_earnings(period_month,worker_id,amount_minor,work_days,daily_details)
@@ -536,7 +532,8 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
       earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
-      ratesEntered:true};
+      ratesEntered:true,
+      happyKopeck:{status:residualMinor>0n?'pending':'not_needed',residualMinor:residualMinor.toString()}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
