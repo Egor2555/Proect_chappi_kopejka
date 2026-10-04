@@ -8,7 +8,7 @@ const RESTORE_ORDER = [
 const REQUIRED_TABLES = [
   'workers','teams','team_memberships','products','rates','orders','order_items',
   'monthly_worker_earnings','production_entries','production_allocations',
-  'attendance_entries','inventory_movements','shipments','shipment_items',
+  'attendance_entries','inventory_movements','shipments','shipment_items','shipment_allocations',
   'payment_entries','monthly_closures','penny_events','fund_entries',
   'audit_log','login_log','users'
 ];
