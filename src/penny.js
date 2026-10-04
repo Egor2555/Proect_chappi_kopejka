@@ -11,7 +11,7 @@ function chooseHappyKopeckWinner(residualMinor, eligibleWorkerIds) {
     throw new Error('No eligible workers for Happy Kopeck');
   const index = require('node:crypto').randomInt(eligibleWorkerIds.length);
   const winnerId = eligibleWorkerIds[index];
-  return { amountMinor: amount.toString(), winnerId, badge: '🏆', message: 'Счастливая копейка от Чаппи 🪙🏆' };
+  return { amountMinor: amount.toString(), winnerId, badge: 'Счастливая копейка от Чаппи 🪙🏆' };
 }
 
 module.exports = { chooseHappyKopeckWinner };
