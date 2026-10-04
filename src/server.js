@@ -866,7 +866,7 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
 app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const tables=['workers','teams','team_memberships','products','rates','orders','order_items','monthly_worker_earnings',
     'production_entries','production_allocations','attendance_entries','inventory_movements',
-    'shipments','shipment_items','payment_entries','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
+    'shipments','shipment_items','shipment_allocations','payment_entries','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
   const backup={format:'chappi-backup-v1',createdAt:new Date().toISOString(),tables:{}};
   for(const table of tables) backup.tables[table]=(await pool.query('SELECT * FROM '+table)).rows;
   backup.tables.users=(await pool.query('SELECT id,username,role,worker_id,active,created_at FROM users')).rows;
