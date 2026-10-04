@@ -719,6 +719,12 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
     const closedMonth=(await c.query(`SELECT 1 FROM monthly_closures
       WHERE period_month=date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date)`)).rowCount>0;
     if(closedMonth) throw new Error('Текущий месяц уже закрыт. Новые отгрузки запрещены.');
+    if(orderId){
+      const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
+      if(!order) throw new Error('Заказ не найден');
+      if(['cancelled','archived'].includes(order.status))
+        throw new Error('Отменённый или архивный заказ нельзя отгружать');
+    }
     const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
       [shipmentNumber,orderId,recipient,note,req.user.sub])).rows[0];
     for(const item of items){
