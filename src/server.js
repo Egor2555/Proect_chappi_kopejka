@@ -137,11 +137,15 @@ app.post('/api/auth/login', asyncRoute(async (req,res) => {
     if (admin && !admin.pin_locked && decryptPin(admin.pin_ciphertext) === pin) user=admin;
     else if (brigadier && !brigadier.pin_locked && decryptPin(brigadier.pin_ciphertext) === pin) user=brigadier;
     else {
-      const target = admin && !admin.pin_locked ? admin : brigadier;
+      // На общем экране «Бригадир» нельзя засчитывать неверный PIN администратору:
+      // сначала проверяем оба действующих PIN, а ошибку привязываем к профилю бригадира.
+      // Так случайные ошибки входа не могут заблокировать администратора.
+      const target = brigadier;
       if (target) {
+        if (target.pin_locked) return res.status(423).json({error:'Профиль бригадира заблокирован после 5 неверных попыток. Обратитесь к администратору.'});
         const failed=await recordPinFailure(target);
         await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,false)',[target.id,'brigadier']);
-        return res.status(failed.pin_locked?423:401).json({error:failed.pin_locked?'Профиль заблокирован после 5 неверных попыток. Обратитесь к администратору.':'Неверный PIN'});
+        return res.status(failed.pin_locked?423:401).json({error:failed.pin_locked?'Профиль бригадира заблокирован после 5 неверных попыток. Обратитесь к администратору.':'Неверный PIN'});
       }
       return res.status(401).json({error:'Профиль бригадира не настроен. Обратитесь к администратору.'});
     }
@@ -266,17 +270,11 @@ app.patch('/api/orders/:id/archive', auth, roles('admin'), asyncRoute(async (req
   res.json(after);
 }));
 
-app.post('/api/users', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {username,password,role,workerId=null}=req.body;
-  if(!username||!password||String(password).length<10||!['worker','brigadier','admin'].includes(role))
-    return res.status(400).json({error:'Логин, пароль от 10 символов и допустимая роль обязательны'});
-  if(['worker','brigadier'].includes(role)&&!workerId) return res.status(400).json({error:'Для учётной записи работника выберите карточку работника'});
-  const hash=await bcrypt.hash(String(password),12);
-  const r=await pool.query('INSERT INTO users(username,password_hash,role,worker_id) VALUES($1,$2,$3,$4) RETURNING id,username,role,worker_id,active',
-    [String(username).trim(),hash,role,workerId]);
-  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','user',$2,$3)",
-    [req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
-  res.status(201).json(r.rows[0]);
+// Старый механизм произвольных логинов/паролей отключён.
+// В Chappi Edition доступ управляется только через три профиля: администратор,
+// бригадир и общий профиль работников. PIN настраивается в админ-панели.
+app.post('/api/users', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  res.status(410).json({error:'Создание произвольных учётных записей отключено в Chappi Edition. Управляйте PIN профилей в разделе «Администрирование».'});
 }));
 
 app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,res) => {
