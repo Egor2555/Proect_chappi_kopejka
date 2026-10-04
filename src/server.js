@@ -160,13 +160,14 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
     if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
   }
   const created=await tx(async c=>{
+    const before=(await c.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId])).rows;
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
     const rows=[];
     for(const workerId of workerIds){
       const r=await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4) RETURNING *',[workDate,teamId,workerId,req.user.sub]);
       rows.push(r.rows[0]);
     }
-    await audit(c,req.user.sub,'replace_daily_attendance','attendance',teamId,null,{workDate,workerIds});
+    await audit(c,req.user.sub,'replace_daily_attendance','attendance',teamId,{workDate,workers:before},{workDate,workerIds});
     return rows;
   });
   res.json(created);
@@ -181,10 +182,15 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {productId,periodMonth,amountMinor}=req.body;
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
     return res.status(400).json({error:'Проверьте изделие, месяц и сумму в копейках'});
-  const r=await pool.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
-    VALUES($1,$2,$3,$4) ON CONFLICT(product_id,period_month) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,created_by=EXCLUDED.created_by
-    RETURNING *`,[productId,periodMonth,Number(amountMinor),req.user.sub]);
-  res.status(201).json(r.rows[0]);
+  const result=await tx(async c=>{
+    const before=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,periodMonth])).rows[0]||null;
+    const after=(await c.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
+      VALUES($1,$2,$3,$4) ON CONFLICT(product_id,period_month) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,created_by=EXCLUDED.created_by
+      RETURNING *`,[productId,periodMonth,Number(amountMinor),req.user.sub])).rows[0];
+    await audit(c,req.user.sub,before?'update':'create','rate',after.id,before,after);
+    return after;
+  });
+  res.status(201).json(result);
 }));
 
 app.get('/api/orders', auth, asyncRoute(async (_req,res) => {
@@ -338,9 +344,13 @@ app.get('/api/payments', auth, roles('admin'), asyncRoute(async (_req,res) => {
 app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {shipmentId,amountMinor,note=''}=req.body;
   if(!shipmentId||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0) return res.status(400).json({error:'Проверьте отгрузку и сумму'});
-  const r=await pool.query('INSERT INTO payment_entries(shipment_id,amount_minor,note,created_by) VALUES($1,$2,$3,$4) RETURNING *',
-    [shipmentId,Number(amountMinor),note,req.user.sub]);
-  res.status(201).json(r.rows[0]);
+  const result=await tx(async c=>{
+    const payment=(await c.query('INSERT INTO payment_entries(shipment_id,amount_minor,note,created_by) VALUES($1,$2,$3,$4) RETURNING *',
+      [shipmentId,Number(amountMinor),note,req.user.sub])).rows[0];
+    await audit(c,req.user.sub,'create','payment',payment.id,null,payment);
+    return payment;
+  });
+  res.status(201).json(result);
 }));
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
