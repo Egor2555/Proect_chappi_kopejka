@@ -471,7 +471,8 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
   const earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
-    WHERE e.period_month=$1 ORDER BY w.display_name`,[start]);
+    WHERE e.period_month=$1 ${req.user.role==='worker' ? 'AND e.worker_id=$2' : ''} ORDER BY w.display_name`,
+    req.user.role==='worker' ? [start,req.user.workerId] : [start]);
   res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows});
 }));
 
