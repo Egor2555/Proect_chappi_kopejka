@@ -135,6 +135,11 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
   res.json(created);
 }));
 
+app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT r.*,p.length_mm FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
+  res.json(r.rows);
+}));
+
 app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {productId,periodMonth,amountMinor}=req.body;
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
@@ -242,6 +247,12 @@ app.use((err,_req,res,_next) => {
 async function start() {
   const schema=fs.readFileSync(path.join(__dirname,'../db/schema.sql'),'utf8');
   await pool.query(schema);
+  const standardLengths=[1500,1700,2000,2250,2500,3000];
+  for (const length of standardLengths) {
+    await pool.query(`INSERT INTO products(code,length_mm) VALUES($1,$2) ON CONFLICT(code) DO NOTHING`,
+      [`60x40-${length}`,length]);
+  }
+  await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
   const initial=process.env.INITIAL_ADMIN_PASSWORD;
   if(initial) {
     const username=process.env.INITIAL_ADMIN_USERNAME || 'admin';
