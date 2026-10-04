@@ -89,6 +89,16 @@ test('Happy Kopeck uses the administrator-selected eligible worker', () => {
   assert.deepEqual(result,{amountMinor:'3',winnerId:'w2',badge:'🏆'});
 });
 
+test('Happy Kopeck keeps workers eligible even when their integer shares are zero', () => {
+  const payroll=calculateMonthlyWorkerEarnings([
+    { date:'2026-10-09', teamId:'team', totalMinor:'1', workerIds:['w1','w2'] }
+  ]);
+  assert.equal(payroll.residualMinor,'1');
+  assert.deepEqual(payroll.earnings.map(x=>x.amountMinor),['0','0']);
+  assert.deepEqual(chooseHappyKopeckWinner(payroll.residualMinor,['w1','w2'],'w2'),
+    {amountMinor:'1',winnerId:'w2',badge:'🏆'});
+});
+
 test('Happy Kopeck has no winner when no residual remains', () => {
   assert.deepEqual(chooseHappyKopeckWinner(0,['w1']),{amountMinor:'0',winnerId:null,badge:null});
 });
