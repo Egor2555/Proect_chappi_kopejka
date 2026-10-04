@@ -1118,7 +1118,7 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     // an older version with several teams, so restore the history but normalize
     // the active state back to the single-brigade rule.
     await c.query("UPDATE teams SET active=false");
-    await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams ORDER BY created_at,id LIMIT 1)");
+    await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
     await audit(c,req.user.sub,'restore_business_data','backup',null,null,{format:backup.format,createdAt:backup.createdAt,tableCounts:plan.tableCounts});
     return {restoredTables:tables.length+1,tableCounts:plan.tableCounts};
   });
@@ -1159,7 +1159,7 @@ async function start() {
       [`60x40-${length}`,length]);
   }
   await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
-  await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams ORDER BY created_at,id LIMIT 1)");
+  await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
   await ensureAccessProfiles();
   const initial=process.env.INITIAL_ADMIN_PASSWORD;
   if(initial) {
