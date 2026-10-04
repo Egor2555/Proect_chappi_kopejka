@@ -200,6 +200,8 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
     return res.status(400).json({error:'Проверьте изделие, месяц и сумму в копейках'});
   const result=await tx(async c=>{
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount)
+      throw new Error('Нельзя менять расценку закрытого месяца');
     const before=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,periodMonth])).rows[0]||null;
     const after=(await c.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
       VALUES($1,$2,$3,$4) ON CONFLICT(product_id,period_month) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,created_by=EXCLUDED.created_by
