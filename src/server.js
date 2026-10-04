@@ -481,7 +481,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   const month=String(req.body.month||'');
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
-  const result=await tx(async c=>{
+  let result;\n  try {\n    result=await tx(async c=>{
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
     const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
