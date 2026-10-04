@@ -627,7 +627,7 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
         SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
       ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
     } else {
-      await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[orderId]);
+
     }
     await audit(c,req.user.sub,'warehouse_assign','order',orderId,null,{items:assigned});
     return {orderId,items:assigned,completed:missing===0};
