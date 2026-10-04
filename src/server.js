@@ -567,6 +567,71 @@ app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
+app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+  const orderId=String(req.params.id);
+  const items=Array.isArray(req.body.items)?req.body.items:[];
+  if(!items.length) return res.status(400).json({error:'Укажите хотя бы одну складскую позицию'});
+  const result=await tx(async c=>{
+    const order=(await c.query("SELECT * FROM orders WHERE id=$1 FOR UPDATE",[orderId])).rows[0];
+    if(!order) throw new Error('Заказ не найден');
+    if(!['queued','active'].includes(order.status)) throw new Error('Нельзя пополнять завершённый или архивный заказ');
+    const assigned=[];
+    for(const item of items){
+      const productId=String(item.productId||'');
+      const qty=Number(item.quantity);
+      if(!productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте складскую позицию и количество');
+      await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[productId]);
+      const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
+      if(!requested) throw new Error('В заказе нет выбранного типоразмера');
+      const done=Number((await c.query(`SELECT COALESCE(SUM(quantity),0)::int qty
+        FROM production_allocations WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[orderId,productId])).rows[0].qty);
+      const need=Math.max(0,Number(requested.required_qty)-done);
+      const take=Math.min(qty,need);
+      if(take<=0) continue;
+      const batches=(await c.query(`SELECT m.id,m.production_entry_id,
+          (m.quantity_delta
+           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0)
+           -COALESCE((SELECT SUM(r.quantity_delta) * -1 FROM inventory_movements r
+             WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+        FROM inventory_movements m
+        WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer')
+          AND m.quantity_delta>0
+        ORDER BY m.created_at,m.id FOR UPDATE`,[productId])).rows;
+      let left=take;
+      for(const batch of batches){
+        if(left<=0) break;
+        const available=Math.max(0,Number(batch.available));
+        if(!available) continue;
+        const move=Math.min(left,available);
+        await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
+          VALUES($1,$2,$3,$4,'warehouse')`,[batch.production_entry_id,orderId,productId,move]);
+        await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+          VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Склад выдан в заказ')`,
+          [productId,-move,batch.production_entry_id,orderId,batch.id,req.user.sub]);
+        left-=move;
+      }
+      if(left>0) throw new Error('На складе недостаточно свободного остатка выбранного типоразмера');
+      assigned.push({productId,quantity:take});
+    }
+    const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i
+      WHERE i.order_id=$1 AND i.required_qty >
+      COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+        WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
+    if(missing===0){
+      await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
+      await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
+      await c.query(`UPDATE orders SET status='active' WHERE id=(
+        SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+      ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
+    } else {
+      await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[orderId]);
+    }
+    await audit(c,req.user.sub,'warehouse_assign','order',orderId,null,{items:assigned});
+    return {orderId,items:assigned,completed:missing===0};
+  });
+  res.status(201).json(result);
+}));
+
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('lengthMm',p.length_mm,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
     FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
