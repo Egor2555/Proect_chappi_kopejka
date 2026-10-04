@@ -267,8 +267,12 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         remaining-=move;
         const candidateMissing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
           COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[candidate.id])).rows[0].n;
-        if(candidateMissing===0) await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
-        else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[candidate.id]);
+        if(candidateMissing===0) {
+          await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
+          await c.query(`UPDATE orders SET status='active' WHERE id=(
+            SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+          ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
+        } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[candidate.id]);
         if(!remaining) break;
       }
     }
@@ -281,7 +285,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
         await c.query(`UPDATE orders SET status='active' WHERE id=(
           SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
-        )`);
+        ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
       } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[orderId]);
     }
     await audit(c,req.user.sub,'create','production_entry',p.id,null,p);
