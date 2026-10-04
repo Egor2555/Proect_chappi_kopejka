@@ -241,6 +241,12 @@ app.post('/api/auth/login', asyncRoute(async (req,res) => {
     if (admin && !admin.pin_locked && decryptPin(admin.pin_ciphertext) === pin) user=admin;
     else if (brigadier && !brigadier.pin_locked && decryptPin(brigadier.pin_ciphertext) === pin) user=brigadier;
     else {
+      if (admin?.pin_locked) {
+        return res.status(423).json({
+          error:'Профиль администратора заблокирован после 5 неверных попыток. Используйте восстановление доступа.',
+          adminRecoveryAvailable:true
+        });
+      }
       // На общем экране «Бригадир» нельзя засчитывать неверный PIN администратору:
       // сначала проверяем оба действующих PIN, а ошибку привязываем к профилю бригадира.
       // Так случайные ошибки входа не могут заблокировать администратора.
