@@ -79,6 +79,7 @@ async function must(path, options, expected=200) {
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(closedReport.earnings.length,1);
   assert.equal(closedReport.earnings[0].amount_minor,'375');
+  assert.equal(closedReport.total.totalMinor,'375');
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
