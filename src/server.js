@@ -839,7 +839,6 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
   const month=String(req.body.month||'');
-  const happyKopeckWinnerId=req.body.happyKopeckWinnerId ? String(req.body.happyKopeckWinnerId) : null;
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
   let result;
@@ -909,7 +908,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     }
     const residualMinor=BigInt(calculation.residualMinor);
     const eligibleWorkerIds=[...new Set(calculationDays.flatMap(day=>day.workerIds))];
-    const happyKopeck=chooseHappyKopeckWinner(residualMinor,eligibleWorkerIds,happyKopeckWinnerId);
+    const happyKopeck=chooseHappyKopeckWinner(residualMinor,eligibleWorkerIds);
     if(residualMinor>0n){
       await c.query(`INSERT INTO penny_events(period_month,source_minor,distributed_minor,allocation,algorithm_version,created_by,status)
         VALUES($1,$2,$3,$4,$5,$6,'approved')`,
