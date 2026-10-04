@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
+const { calculateMonthlyWorkerEarnings } = require('./domain');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -505,31 +506,24 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
       GROUP BY e.work_date,e.team_id ORDER BY e.work_date,e.team_id`,[start])).rows;
     const attendanceMap=new Map(attendance.map(x=>[String(x.work_date)+'|'+x.team_id,x]));
-    const workerTotals=new Map();
-    const workerDetails=new Map();
-    let residualMinor=0n;
-    for(const day of prodDays){
+    const calculationDays=prodDays.map(day=>{
       const a=attendanceMap.get(String(day.work_date)+'|'+day.team_id);
       if(!a || Number(a.worker_count)<1) throw new Error('Нет отмеченных работников: '+String(day.work_date));
-      const cents=BigInt(day.total_minor);
-      const n=BigInt(a.worker_count);
-      const share=cents/n;
-      const remainder=cents%n;
-      // Integer UAH accounting cannot create a fractional kopeck. Keep the remainder
-      // for the dedicated Happy Kopeck stage instead of silently losing it.
-      for(const person of a.workers){
-        const wid=person.workerId;
-        workerTotals.set(wid,(workerTotals.get(wid)||0n)+share);
-        if(!workerDetails.has(wid)) workerDetails.set(wid,[]);
-        workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:share.toString()});
-      }
-      residualMinor += remainder;
-    }
-    for(const [workerId,amount] of workerTotals){
-      const days=workerDetails.get(workerId).filter(x=>x.shareMinor).length;
+      return {
+        date:String(day.work_date),
+        teamId:day.team_id,
+        totalMinor:day.total_minor,
+        workerIds:a.workers.map(person=>person.workerId)
+      };
+    });
+    const calculation=calculateMonthlyWorkerEarnings(calculationDays);
+    for(const earning of calculation.earnings){
       await c.query(`INSERT INTO monthly_worker_earnings(period_month,worker_id,amount_minor,work_days,daily_details)
-        VALUES($1,$2,$3,$4,$5)`,[start,workerId,amount.toString(),days,JSON.stringify(workerDetails.get(workerId))]);
+        VALUES($1,$2,$3,$4,$5)`,
+        [start,earning.workerId,earning.amountMinor,earning.workDays,JSON.stringify(earning.dailyDetails)]);
     }
+    const residualMinor=BigInt(calculation.residualMinor);
+    const workerTotals=new Map(calculation.earnings.map(x=>[x.workerId,BigInt(x.amountMinor)]));
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
       earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
