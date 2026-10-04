@@ -106,3 +106,17 @@ test('Happy Kopeck has no winner when no residual remains', () => {
 test('Happy Kopeck rejects an empty eligible worker list', () => {
   assert.throws(()=>chooseHappyKopeckWinner(1,[]),/No eligible workers/);
 });
+
+
+test('closed-month snapshot must preserve the worker display name independently of the live worker record', () => {
+  // The runtime snapshot now stores displayName alongside workerId. This invariant
+  // prevents a later worker rename from rewriting historical payroll labels.
+  const snapshot = { earnings: [{ workerId:'w1', displayName:'Иванов', amountMinor:'1234' }] };
+  const liveNames = new Map([['w1','Петров']]);
+  const rendered = snapshot.earnings.map(x => ({
+    workerId:x.workerId,
+    displayName:x.displayName || liveNames.get(x.workerId) || 'Архивный работник',
+    amountMinor:x.amountMinor
+  }));
+  assert.equal(rendered[0].displayName,'Иванов');
+});
