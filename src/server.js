@@ -507,7 +507,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         await c.query(`UPDATE orders SET status='active' WHERE id=(
           SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
         ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
-      } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[orderId]);
+      } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[orderId]);
     }
     await audit(c,req.user.sub,'create','production_entry',p.id,null,p);
     return p;
