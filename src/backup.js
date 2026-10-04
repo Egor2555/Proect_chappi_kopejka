@@ -1,3 +1,10 @@
+const RESTORE_ORDER = [
+  'workers','teams','products','users','team_memberships','rates','orders','order_items',
+  'production_entries','production_allocations','attendance_entries','inventory_movements',
+  'shipments','shipment_items','payment_entries','monthly_worker_earnings','monthly_closures',
+  'penny_events','fund_entries','audit_log','login_log'
+];
+
 const REQUIRED_TABLES = [
   'workers','teams','team_memberships','products','rates','orders','order_items',
   'monthly_worker_earnings','production_entries','production_allocations',
@@ -35,6 +42,7 @@ function buildRestorePlan(backup) {
     createdAt: summary.createdAt,
     tableCounts: summary.tableCounts,
     mode: 'dry-run',
+    restoreOrder: RESTORE_ORDER.slice(),
     destructive: false,
     passwordHashesRestored: false
   };
@@ -61,4 +69,4 @@ function validateBackupRelations(backup) {
   return true;
 }
 
-module.exports = { REQUIRED_TABLES, validateBackup, validateBackupRelations, buildRestorePlan };
+module.exports = { RESTORE_ORDER, REQUIRED_TABLES, validateBackup, validateBackupRelations, buildRestorePlan };
