@@ -104,6 +104,15 @@ async function must(path, options, expected=200) {
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
+  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
+  await must('/api/fund',{token:brigadierLogin.token});
+  const brigadierCannotCreateOrder=await request('/api/orders',{token:brigadierLogin.token,method:'POST',body:{orderNumber:'CI-FORBIDDEN',title:'Should be denied',items:[{productId:product.id,requiredQty:1}]}});
+  assert.equal(brigadierCannotCreateOrder.status,403);
+  const brigadierCannotWriteFund=await request('/api/fund',{token:brigadierLogin.token,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1,note:'forbidden'}});
+  assert.equal(brigadierCannotWriteFund.status,403);
+  const brigadierCannotWriteRates=await request('/api/rates',{token:brigadierLogin.token,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:1}});
+  assert.equal(brigadierCannotWriteRates.status,403);
+
   const workerLogin=await must('/api/auth/login',{method:'POST',body:{profile:'worker'}});
   const denied=await request('/api/admin/login-log',{token:workerLogin.token});
   assert.equal(denied.status,403);
