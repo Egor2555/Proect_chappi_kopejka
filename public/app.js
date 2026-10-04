@@ -19,7 +19,20 @@ function productOptions(){return state.products.filter(p=>p.active).map(p=>'<opt
 function teamName(){return state.teams[0]?.name||'Бригада 1'}
 function singleTeamId(){return state.teams[0]?.id||''}
 async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='fund')return fund();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
-async function home(){const d=await api('/dashboard');const todayRows=d.today.map(x=>({...x,length_m:Number(x.length_m)}));$('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(todayRows,[['length_m','Длина, м'],['quantity','Количество']])+'</div>'}
+async function home(){
+ const d=await api('/dashboard');
+ const todayRows=d.today.map(x=>({...x,length_m:Number(x.length_m)}));
+ const isWorker=state.user.role==='worker';
+ if(isWorker){
+   $('#home').innerHTML='<h1>Сегодня</h1>'+
+     '<div class="card"><h2>Производство сегодня</h2>'+
+     simpleTable(todayRows,[['length_m','Длина, м'],['quantity','Количество']])+
+     '</div>'+
+     '<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>';
+   return;
+ }
+ $('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(todayRows,[['length_m','Длина, м'],['quantity','Количество']])+'</div>';
+}
 function orderCards(rows,editable=false){
  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
  return rows.map((o,index)=>{
