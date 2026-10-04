@@ -684,6 +684,15 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       const qty=Number(item.quantity);
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
       await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.productId]);
+      if(orderId){
+        const orderItem=(await c.query(`SELECT i.required_qty,
+          COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+            WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done
+          FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[orderId,item.productId])).rows[0];
+        if(!orderItem) throw new Error('В выбранном заказе нет такого типоразмера');
+        const orderRemaining=Math.max(0,Number(orderItem.required_qty)-Number(orderItem.done));
+        if(qty>orderRemaining) throw new Error('Отгрузка превышает остаток выбранной позиции заказа: '+orderRemaining+' шт.');
+      }
       const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
       const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3) RETURNING id',[sh.id,item.productId,qty])).rows[0];
