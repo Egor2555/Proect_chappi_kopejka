@@ -125,6 +125,25 @@ app.post('/api/workers', auth, roles('admin'), asyncRoute(async (req,res) => {
   res.status(201).json(r.rows[0]);
 }));
 
+app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const before=(await pool.query('SELECT * FROM workers WHERE id=$1',[req.params.id])).rows[0];
+  if(!before) return res.status(404).json({error:'Работник не найден'});
+  const after=(await pool.query('UPDATE workers SET active=false,archived_at=now() WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','worker',$2,$3,$4)",
+    [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
+  res.json(after);
+}));
+
+app.patch('/api/orders/:id/archive', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const before=(await pool.query('SELECT * FROM orders WHERE id=$1',[req.params.id])).rows[0];
+  if(!before) return res.status(404).json({error:'Заказ не найден'});
+  if(!['completed','cancelled'].includes(before.status)) return res.status(400).json({error:'В архив можно перенести только завершённый или отменённый заказ'});
+  const after=(await pool.query("UPDATE orders SET status='archived' WHERE id=$1 RETURNING *",[req.params.id])).rows[0];
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','order',$2,$3,$4)",
+    [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
+  res.json(after);
+}));
+
 app.post('/api/users', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {username,password,role,workerId=null}=req.body;
   if(!username||!password||String(password).length<10||!['worker','brigadier','admin'].includes(role))
