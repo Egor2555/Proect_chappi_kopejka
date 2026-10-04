@@ -103,6 +103,7 @@ async function archive(){
  $('#archive').innerHTML='<h1>Архив месяцев</h1><div class="card"><p class="muted">Показываются закрытые месяцы за последние шесть месяцев. Закрытые итоги хранятся отдельным снимком.</p>'+rows.map(x=>'<div class="card"><strong>'+escapeHtml(String(x.period_month).slice(0,7))+'</strong><p>Закрыт: '+new Date(x.closed_at).toLocaleString('uk-UA')+'</p><p>Количество: '+(x.totals.total?.quantity??'—')+' · Сумма: '+(x.totals.total?.totalMinor?money(x.totals.total.totalMinor):'—')+'</p></div>').join('')+'</div>'
 }
 async function admin(){
+ await api('/admin/mode-event',{method:'POST',body:JSON.stringify({})});
  const [rows,audit]=await Promise.all([api('/admin/login-log'),api('/admin/audit-log')]);
  $('#admin').innerHTML='<h1>Администрирование</h1><div class="card"><h2>Резервный экспорт</h2><p>Экспортирует рабочие данные и историю без паролей и хешей доступа.</p><button id="exportBackup">Скачать резервную копию</button></div><div class="card"><h2>Журнал входов (только администратор)</h2>'+simpleTable(rows,[['username_attempt','Логин'],['success','Успешно'],['created_at','Дата']])+'</div><div class="card"><h2>Журнал изменений</h2>'+simpleTable(audit,[['username','Кто'],['action','Действие'],['entity_type','Раздел'],['created_at','Дата']])+'</div><div class="card"><h2>Системная информация</h2><p>Секреты и PIN не отображаются. Доступ к журналам проверяется сервером.</p><button id="logout">Выйти</button></div>';
  $('#logout').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};
