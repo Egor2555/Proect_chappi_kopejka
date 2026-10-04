@@ -386,6 +386,36 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   res.status(201).json(r.rows[0]);
 }));
 
+app.get('/api/fund', auth, asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT COALESCE(SUM(CASE WHEN entry_type='income' THEN amount_minor
+    WHEN entry_type='expense' THEN -amount_minor ELSE 0 END),0)::text balance_minor,
+    COALESCE(SUM(CASE WHEN entry_type='income' THEN amount_minor ELSE 0 END),0)::text income_minor,
+    COALESCE(SUM(CASE WHEN entry_type='expense' THEN amount_minor ELSE 0 END),0)::text expense_minor
+    FROM fund_entries`);
+  const entries=await pool.query('SELECT * FROM fund_entries ORDER BY entry_date DESC,created_at DESC LIMIT 200');
+  res.json({summary:r.rows[0],entries:entries.rows});
+}));
+
+app.post('/api/fund', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const {entryDate,entryType,amountMinor,note}=req.body;
+  if(!entryDate||!['income','expense','adjustment'].includes(entryType)||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0||!note)
+    return res.status(400).json({error:'Проверьте дату, тип, сумму и пояснение'});
+  const result=await tx(async c=>{
+    const entry=(await c.query('INSERT INTO fund_entries(entry_date,entry_type,amount_minor,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
+      [entryDate,entryType,Number(amountMinor),note,req.user.sub])).rows[0];
+    await audit(c,req.user.sub,'create','fund_entry',entry.id,null,entry);
+    return entry;
+  });
+  res.status(201).json(result);
+}));
+
+app.get('/api/archive/months', auth, asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT * FROM monthly_closures
+    WHERE period_month >= date_trunc('month',CURRENT_DATE - INTERVAL '5 months')::date
+    ORDER BY period_month DESC`);
+  res.json(r.rows);
+}));
+
 app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT a.id,u.username,a.action,a.entity_type,a.entity_id,a.before_data,a.after_data,a.reason,a.created_at
     FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 500`);
@@ -395,7 +425,7 @@ app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res
 app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const tables=['workers','teams','team_memberships','products','rates','orders','order_items',
     'production_entries','production_allocations','attendance_entries','inventory_movements',
-    'shipments','shipment_items','payment_entries','monthly_closures','penny_events','audit_log'];
+    'shipments','shipment_items','payment_entries','monthly_closures','penny_events','fund_entries','audit_log'];
   const backup={format:'chappi-backup-v1',createdAt:new Date().toISOString(),tables:{}};
   for(const table of tables) backup.tables[table]=(await pool.query('SELECT * FROM '+table)).rows;
   backup.tables.users=(await pool.query('SELECT id,username,role,worker_id,active,created_at FROM users')).rows;
