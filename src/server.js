@@ -154,6 +154,11 @@ app.post('/api/teams', auth, roles('admin'), asyncRoute(async (req,res) => {
 app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {workDate,teamId,workerIds=[]}=req.body;
   if(!workDate||!teamId||!Array.isArray(workerIds)) return res.status(400).json({error:'Недостаточно данных'});
+  if(req.user.role==='brigadier') {
+    const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
+      [req.user.workerId,teamId,workDate]);
+    if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
+  }
   const created=await tx(async c=>{
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
     const rows=[];
@@ -209,6 +214,11 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
   const {workDate,teamId,productId,orderId=null,quantity,note=''}=req.body;
   if(!workDate||!teamId||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
     return res.status(400).json({error:'Проверьте дату, бригаду, изделие и количество'});
+  if(req.user.role==='brigadier') {
+    const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
+      [req.user.workerId,teamId,workDate]);
+    if(!allowed.rowCount) return res.status(403).json({error:'Можно записывать производство только своей бригады'});
+  }
   const result=await tx(async c=>{
     const month=String(workDate).slice(0,7)+'-01';
     const closed=(await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
