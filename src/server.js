@@ -21,7 +21,7 @@ if (!process.env.DATABASE_URL || !JWT_SECRET) {
 }
 
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '25mb' }));
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Слишком много попыток входа. Попробуйте позже.' } }));
 app.use(express.static(path.join(__dirname, '../public')));
 
