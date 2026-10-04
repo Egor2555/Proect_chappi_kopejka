@@ -41,6 +41,7 @@ async function ensureAccessProfiles() {
   // only actually shipped units while preserving the original production day.
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ');
   await pool.query(`CREATE TABLE IF NOT EXISTS shipment_allocations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shipment_item_id UUID NOT NULL REFERENCES shipment_items(id) ON DELETE RESTRICT,
