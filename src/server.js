@@ -244,6 +244,64 @@ app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
+app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+  const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
+  if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
+  const shipment=await tx(async c=>{
+    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
+      [shipmentNumber,orderId,recipient,note,req.user.sub])).rows[0];
+    for(const item of items){
+      const qty=Number(item.quantity);
+      if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
+      const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1 FOR UPDATE',[item.productId])).rows[0].qty;
+      if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
+      await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3)',[sh.id,item.productId,qty]);
+      await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
+        VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,[item.productId,-qty,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
+    }
+    await audit(c,req.user.sub,'create','shipment',sh.id,null,sh);
+    return sh;
+  });
+  res.status(201).json(shipment);
+}));
+
+app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const {shipmentId,amountMinor,note=''}=req.body;
+  if(!shipmentId||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0) return res.status(400).json({error:'Проверьте отгрузку и сумму'});
+  const r=await pool.query('INSERT INTO payment_entries(shipment_id,amount_minor,note,created_by) VALUES($1,$2,$3,$4) RETURNING *',
+    [shipmentId,Number(amountMinor),note,req.user.sub]);
+  res.status(201).json(r.rows[0]);
+}));
+
+app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
+  const month=String(req.query.month||'');
+  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
+  const start=month+'-01';
+  const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(e.id)::int entries,
+    COALESCE(SUM(e.quantity),0)::int quantity,COALESCE(SUM(e.total_minor),0)::text total_minor
+    FROM products p LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
+      AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+    GROUP BY p.id ORDER BY p.length_mm`,[start]);
+  const totals=r.rows.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+BigInt(x.total_minor)}),{quantity:0,totalMinor:0n});
+  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()}});
+}));
+
+app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const month=String(req.body.month||'');
+  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
+  const start=month+'-01';
+  const report=await pool.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
+    COALESCE(SUM(e.total_minor),0)::text total_minor FROM products p
+    LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
+      AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+    GROUP BY p.id ORDER BY p.length_mm`,[start]);
+  const totals=report.rows.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+BigInt(x.total_minor)}),{quantity:0,totalMinor:0n});
+  const snapshot={items:report.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()}};
+  const r=await pool.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
+    [start,JSON.stringify(snapshot),req.user.sub]);
+  res.status(201).json(r.rows[0]);
+}));
+
 app.get('/api/admin/login-log', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT l.id,l.username_attempt,l.success,l.created_at,u.username
     FROM login_log l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC LIMIT 300`);
