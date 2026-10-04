@@ -443,6 +443,8 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const month=String(req.query.month||'');
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
+  if(req.user.role==='worker' && month!==new Date().toISOString().slice(0,7))
+    return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
   const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(e.id)::int entries,
     COALESCE(SUM(e.quantity),0)::int quantity,COALESCE(SUM(e.total_minor),0)::text total_minor
