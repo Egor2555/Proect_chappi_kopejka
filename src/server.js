@@ -154,7 +154,7 @@ app.get('/api/orders', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT o.*,COALESCE(json_agg(json_build_object('productId',i.product_id,'lengthMm',p.length_mm,'required',i.required_qty,
     'done',COALESCE(d.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(d.qty,0),0))) ORDER BY p.length_mm) items
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
-    LEFT JOIN LATERAL(SELECT SUM(quantity)::int qty FROM production_entries e WHERE e.order_id=o.id AND e.product_id=i.product_id AND e.voided_at IS NULL)d ON true
+    LEFT JOIN LATERAL(SELECT SUM(a.quantity)::int qty FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id)d ON true
     GROUP BY o.id ORDER BY o.priority DESC,o.created_at ASC`);
   res.json(r.rows);
 }));
