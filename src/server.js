@@ -590,7 +590,8 @@ app.get('/api/admin/audit-log', auth, roles('admin'), asyncRoute(async (_req,res
 }));
 
 app.post('/api/admin/restore/dry-run', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const plan = buildRestorePlan(req.body);
+  const existingUsers = (await pool.query('SELECT id FROM users')).rows.map(r => r.id);
+  const plan = buildRestorePlan(req.body, existingUsers);
   res.json(plan);
 }));
 
