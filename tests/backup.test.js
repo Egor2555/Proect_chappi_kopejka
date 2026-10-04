@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateBackup, validateBackupRelations, buildRestorePlan, REQUIRED_TABLES, RESTORE_ORDER } = require('../src/backup');
+const { validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan, REQUIRED_TABLES, RESTORE_ORDER } = require('../src/backup');
 
 
 function validBackup() {
@@ -55,7 +55,9 @@ test('backup relation validator rejects dangling references', () => {
 
 
 test('restore plan is non-destructive dry-run', () => {
-  const plan = buildRestorePlan(validBackup());
+  const backup = validBackup();
+  backup.tables.users.push({id:'backup-admin',username:'admin',role:'admin',worker_id:null});
+  const plan = buildRestorePlan(backup,[{id:'current-admin',username:'admin',worker_id:null}]);
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.destructive, false);
   assert.equal(plan.passwordHashesRestored, false);
@@ -73,4 +75,30 @@ test('backup relation validator rejects duplicate usernames', () => {
   const backup = validBackup();
   backup.tables.users.push({id:'u1',username:'admin',role:'admin'},{id:'u2',username:'admin',role:'admin'});
   assert.throws(() => validateBackupRelations(backup), /Дублирующийся username/);
+});
+
+
+test('restore user mapping preserves current authentication by username', () => {
+  const map = buildUserRestoreMap(
+    [{id:'old-1',username:'admin'},{id:'old-2',username:'worker'}],
+    [{id:'new-1',username:'admin'},{id:'new-2',username:'worker'}]
+  );
+  assert.deepEqual(map.idMap, {'old-1':'new-1','old-2':'new-2'});
+  assert.deepEqual(map.missingUsernames, []);
+});
+
+test('restore plan blocks when a backup account is missing locally', () => {
+  const backup = validBackup();
+  backup.tables.users.push({id:'u1',username:'admin',role:'admin',worker_id:null});
+  const plan = buildRestorePlan(backup,[{id:'current',username:'different',worker_id:null}]);
+  assert.deepEqual(plan.missingBackupUsers,['admin']);
+  assert.equal(plan.safeToRestore,false);
+});
+
+test('restore plan blocks when a preserved user points to a worker absent from backup', () => {
+  const backup = validBackup();
+  backup.tables.users.push({id:'u1',username:'admin',role:'admin',worker_id:'w1'});
+  const plan = buildRestorePlan(backup,[{id:'current',username:'admin',worker_id:'missing-worker'}]);
+  assert.equal(plan.currentUsersWithMissingWorkers.length,1);
+  assert.equal(plan.safeToRestore,false);
 });
