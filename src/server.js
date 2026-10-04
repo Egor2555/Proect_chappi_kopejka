@@ -55,8 +55,12 @@ async function ensureAccessProfiles() {
   for (const role of ['admin','brigadier','worker']) {
     const rows = (await pool.query('SELECT id,username FROM users WHERE role=$1 ORDER BY created_at,id',[role])).rows;
     if (!rows.length) {
-      const username = role === 'admin' ? 'admin' : role === 'brigadier' ? 'brigadier' : 'workers';
-      const hash = await bcrypt.hash(randomSecret(), 12);
+      const username = role === 'admin'
+        ? (process.env.INITIAL_ADMIN_USERNAME || 'admin')
+        : role === 'brigadier' ? 'brigadier' : 'workers';
+      const hash = role === 'admin' && process.env.INITIAL_ADMIN_PASSWORD
+        ? await bcrypt.hash(process.env.INITIAL_ADMIN_PASSWORD, 12)
+        : await bcrypt.hash(randomSecret(), 12);
       await pool.query('INSERT INTO users(username,password_hash,role,pin_ciphertext,pin_enabled) VALUES($1,$2,$3,$4,$5)',
         [username, hash, role, role === 'admin' ? encryptPin('2505') : role === 'brigadier' ? encryptPin('1111') : null, role !== 'worker']);
     } else if (rows.length > 1) {
@@ -1166,13 +1170,6 @@ async function start() {
   await ensureAccessProfiles();
   // Startup self-heals the single-active-order invariant after legacy restores.
   await pool.query("UPDATE orders SET status='queued' WHERE status='active' AND id <> (SELECT id FROM orders WHERE status='active' ORDER BY priority DESC,created_at,id LIMIT 1)");
-  const initial=process.env.INITIAL_ADMIN_PASSWORD;
-  if(initial) {
-    const username=process.env.INITIAL_ADMIN_USERNAME || 'admin';
-    const hash=await bcrypt.hash(initial,12);
-    await pool.query(`INSERT INTO users(username,password_hash,role) VALUES($1,$2,'admin')
-      ON CONFLICT(username) DO NOTHING`,[username,hash]);
-  }
   app.listen(PORT,'0.0.0.0',()=>console.log(`Chappi Edition listening on ${PORT}`));
 }
 start().catch(e=>{console.error(e);process.exit(1);});
