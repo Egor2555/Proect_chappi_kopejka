@@ -37,6 +37,17 @@ async function recordPinFailure(user) {
   return r.rows[0];
 }
 async function ensureAccessProfiles() {
+  // Migration for shipment-to-production traceability. It lets payroll value
+  // only actually shipped units while preserving the original production day.
+  await pool.query(`CREATE TABLE IF NOT EXISTS shipment_allocations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shipment_item_id UUID NOT NULL REFERENCES shipment_items(id) ON DELETE RESTRICT,
+    inventory_movement_id UUID NOT NULL REFERENCES inventory_movements(id) ON DELETE RESTRICT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(shipment_item_id, inventory_movement_id)
+  )`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_shipment_allocations_inventory ON shipment_allocations(inventory_movement_id)');
   const randomSecret = () => crypto.randomBytes(32).toString('hex');
   for (const role of ['admin','brigadier','worker']) {
     const rows = (await pool.query('SELECT id,username FROM users WHERE role=$1 ORDER BY created_at,id',[role])).rows;
@@ -562,7 +573,24 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.productId]);
       const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
-      await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3)',[sh.id,item.productId,qty]);
+      const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3) RETURNING id',[sh.id,item.productId,qty])).rows[0];
+      // Consume warehouse stock FIFO and remember exactly which production batches
+      // supplied this shipment. This is the bridge between shipment-month pay and
+      // the real production day/team that earned the money.
+      const batches=(await c.query(`SELECT m.id,m.production_entry_id,
+          (m.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0))::int AS available
+        FROM inventory_movements m
+        WHERE m.product_id=$1 AND m.movement_type='production_in' AND m.quantity_delta>0
+        ORDER BY m.created_at,m.id
+        FOR UPDATE`,[item.productId])).rows;
+      let left=qty;
+      for(const batch of batches){
+        if(left<=0) break;
+        const take=Math.min(left,Number(batch.available));
+        if(take<=0) continue;
+        await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',[shipmentItem.id,batch.id,take]);
+        left-=take;
+      }
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
         VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,[item.productId,-qty,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
     }
@@ -591,18 +619,21 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const month=String(req.query.month||'');
-  if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
+  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
   const currentMonthKyiv=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date());
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
-  const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(e.id)::int entries,
-    COALESCE(SUM(e.quantity),0)::int quantity,
+  const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(DISTINCT pe.id)::int entries,
+    COALESCE(SUM(sa.quantity),0)::int quantity,
     r.amount_minor::text rate_minor,
-    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(e.quantity),0)::bigint*r.amount_minor)::text END total_minor
+    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
-    LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
-      AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+    LEFT JOIN shipment_items si ON si.product_id=p.id
+    LEFT JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+    LEFT JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+    LEFT JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+    LEFT JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
     GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
@@ -613,17 +644,20 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     WHERE e.period_month=$1 ${req.user.role==='worker' ? 'AND e.worker_id=$2' : ''} ORDER BY w.display_name`,
     req.user.role==='worker' ? [start,req.user.workerId] : [start]);
   const closureRow=(await pool.query('SELECT totals FROM monthly_closures WHERE period_month=$1',[start])).rows[0]||null;
-  let residualMinor=0n;
-  let closedHappyKopeck=null;
+  let residualMinor=0n, closedHappyKopeck=null;
   if(closureRow){
     const snapshot=closureRow.totals||{};
     residualMinor=BigInt(snapshot.happyKopeck?.residualMinor||'0');
     closedHappyKopeck=snapshot.happyKopeck||null;
   } else {
-    const dayRows=await pool.query(`SELECT e.work_date,e.team_id,SUM((e.quantity::bigint*r.amount_minor))::text total_minor
-      FROM production_entries e JOIN rates r ON r.product_id=e.product_id AND r.period_month=$1::date
-      WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
-      GROUP BY e.work_date,e.team_id`,[start]);
+    const dayRows=await pool.query(`SELECT pe.work_date,pe.team_id,SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
+      FROM shipment_items si
+      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+      JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+      JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
+      JOIN rates r ON r.product_id=si.product_id AND r.period_month=$1::date
+      GROUP BY pe.work_date,pe.team_id`,[start]);
     const dayAttendance=await pool.query(`SELECT work_date,team_id,COUNT(*)::int worker_count
       FROM attendance_entries WHERE work_date >= $1::date AND work_date < ($1::date + INTERVAL '1 month')
       GROUP BY work_date,team_id`,[start]);
@@ -632,12 +666,13 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
-        FROM attendance_entries a
-        JOIN workers w ON w.id=a.worker_id
+        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
         JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
-          AND pe.voided_at IS NULL
-        WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
-        ORDER BY w.display_name`,[start])).rows
+        JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type='production_in'
+        JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
+        JOIN shipment_items si ON si.id=sa.shipment_item_id
+        JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+        WHERE pe.voided_at IS NULL ORDER BY w.display_name`,[start])).rows
     : [];
   res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,
     eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString(),winnerId:closedHappyKopeck?.winnerId||null},closed:!!closureRow});
