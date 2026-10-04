@@ -18,7 +18,21 @@ function teamName(){return state.teams[0]?.name||'Бригада 1'}
 function singleTeamId(){return state.teams[0]?.id||''}
 async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='fund')return fund();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
 async function home(){const d=await api('/dashboard');$('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(d.today,[['length_mm','Длина, мм'],['quantity','Количество']])+'</div>'}
-function orderCards(rows,editable=false){if(!rows.length)return '<div class="empty">Активных заказов нет</div>';return rows.map(o=>'<div class="card '+(o.priority>0?'priority':'')+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+((o.items||[]).map(i=>'<p>'+(i.length_mm/1000)+' м: '+i.done+' / '+i.required+' · остаток '+i.remaining+'</p>').join(''))+(state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+(state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+'</div>').join('')}
+function orderCards(rows,editable=false){
+ if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
+ return rows.map(o=>{
+   const warehouseForm=(['admin','brigadier'].includes(state.user.role)&&['queued','active'].includes(o.status))
+    ? '<form class="warehouseAssignForm card" data-id="'+o.id+'"><strong>Выдать со склада в заказ</strong><div class="row"><label>Типоразмер<select name="productId">'+
+      (o.items||[]).map(i=>'<option value="'+i.product_id+'">'+(i.length_mm/1000)+' м · '+i.remaining+' шт. осталось</option>').join('')+
+      '</select></label><label>Количество<input name="quantity" type="number" min="1" step="1" required></label><button>Выдать со склада</button></div></form>' : '';
+   return '<div class="card '+(o.priority>0?'priority':'')+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
+     ((o.items||[]).map(i=>'<p>'+(i.length_mm/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
+     warehouseForm+
+     (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
+     (state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+
+     '</div>';
+ }).join('');
+}
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 async function production(){
  const canEdit=['admin','brigadier'].includes(state.user.role);
@@ -54,6 +68,16 @@ async function orders(){state.orders=await api('/orders');$('#orders').innerHTML
  $('#addOrderItem').onclick=()=>{const row=document.createElement('div');row.className='row orderItem';row.innerHTML='<label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label><button type="button" class="removeOrderItem">Убрать</button>';row.querySelector('.removeOrderItem').onclick=()=>row.remove();$('#orderItems').append(row)};
  form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form);const products=f.getAll('productId'),quantities=f.getAll('requiredQty');try{await api('/orders',{method:'POST',body:JSON.stringify({orderNumber:f.get('orderNumber'),title:f.get('title'),priority:Number(f.get('priority')),items:products.map((productId,i)=>({productId,requiredQty:Number(quantities[i])}))})});notify('Заказ создан');await loadBase();orders()}catch(err){notify(err.message,'error')}});
 }
+ document.querySelectorAll('.warehouseAssignForm').forEach(form=>form.addEventListener('submit',async e=>{
+   e.preventDefault();
+   const d=new FormData(form);
+   try{
+     await api('/orders/'+form.dataset.id+'/warehouse-assign',{method:'POST',body:JSON.stringify({items:[{productId:d.get('productId'),quantity:Number(d.get('quantity'))}]})});
+     notify('Складская продукция выдана в заказ','success');
+     await loadBase();
+     orders();
+   }catch(err){notify(err.message,'error')}
+ }));
  document.querySelectorAll('.priorityForm').forEach(pf=>pf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/orders/'+pf.dataset.id+'/priority',{method:'PATCH',body:JSON.stringify({priority:Number(new FormData(pf).get('priority'))})});notify('Приоритет изменён');orders()}catch(err){notify(err.message,'error')}}));
  document.querySelectorAll('.archiveOrder').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести завершённый заказ в архив? История останется.'))return;try{await api('/orders/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Заказ архивирован');orders()}catch(err){notify(err.message,'error')}})
 }
