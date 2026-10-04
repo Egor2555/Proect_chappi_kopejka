@@ -22,14 +22,14 @@ function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">По�
 async function production(){
  const canEdit=['admin','brigadier'].includes(state.user.role);
  const rows=state.products.filter(p=>p.active).map(p=>'<div class="row productionItem"><label>'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'<input name="qty_'+p.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Количество"></label></div>').join('');
- $('#production').innerHTML='<h1>Ежедневное производство</h1><div class="card"><form id="productionForm"><label>Дата<input name="workDate" type="date" required value="'+localDate()+'"></label><label>Бригада<select name="teamId" required>'+teamOptions()+'</select></label><label>Заказ (необязательно)<select name="orderId"><option value="">Без привязки к заказу</option>'+state.orders.filter(o=>['queued','active'].includes(o.status)).map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('')+'</select></label><h3>Количество за день по длинам</h3>'+rows+'<label>Примечание<textarea name="note" rows="2"></textarea></label><button '+(!canEdit?'disabled':'')+'>Сохранить дневное производство</button></form></div><p class="muted">Вводится общий фактический выпуск бригады за день. Заполните только те длины, которые сегодня производили. Расценка фиксируется отдельно для каждой записи.</p>';
+ $('#production').innerHTML='<h1>Ежедневное производство</h1><div class="card"><form id="productionForm"><label>Дата<input name="workDate" type="date" required value="'+localDate()+'"></label><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p><label>Заказ (необязательно)<select name="orderId"><option value="">Без привязки к заказу</option>'+state.orders.filter(o=>['queued','active'].includes(o.status)).map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('')+'</select></label><h3>Количество за день по длинам</h3>'+rows+'<label>Примечание<textarea name="note" rows="2"></textarea></label><button '+(!canEdit?'disabled':'')+'>Сохранить дневное производство</button></form></div><p class="muted">Вводится общий фактический выпуск бригады за день. Заполните только те длины, которые сегодня производили. Расценка фиксируется отдельно для каждой записи.</p>';
  $('#productionForm').addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const items=state.products.map(p=>({productId:p.id,quantity:Number(data.get('qty_'+p.id)||0)})).filter(x=>x.quantity>0);
   if(!items.length){notify('Укажите количество хотя бы по одной длине','error');return}
   const button=form.querySelector('button[type="submit"]');button.disabled=true;let saved=0;
   try{
    for(const item of items){
-    await api('/production',{method:'POST',body:JSON.stringify({workDate:data.get('workDate'),teamId:data.get('teamId'),productId:item.productId,orderId:data.get('orderId')||null,quantity:item.quantity,note:data.get('note')||''})});
+    await api('/production',{method:'POST',body:JSON.stringify({workDate:data.get('workDate'),productId:item.productId,orderId:data.get('orderId')||null,quantity:item.quantity,note:data.get('note')||''})});
     saved++;
    }
    notify('Сохранено позиций: '+saved,'success');await loadBase();production();
@@ -72,20 +72,19 @@ async function people(){
  const canAttendance=['admin','brigadier'].includes(state.user.role);
  $('#people').innerHTML='<h1>Работники и присутствие</h1><div class="card">'+simpleTable(state.workers,[['display_name','Имя'],['team_name','Бригада'],['active','Активен']])+'</div>'+
  (canManage?'<div class="card"><h2>Архивировать работника</h2>'+state.workers.filter(w=>w.active).map(w=>'<p>'+escapeHtml(w.display_name)+' <button class="archiveWorker" data-id="'+w.id+'">В архив</button></p>').join('')+'</div>':'')+
- (canManage?'<div class="card"><h2>Добавить работника</h2><form id="workerForm"><label>Имя<input name="displayName" required></label><button>Добавить</button></form></div><div class="card"><h2>Назначить работника в бригаду</h2><form id="membershipForm"><label>Работник<select name="workerId">'+state.workers.map(w=>'<option value="'+w.id+'">'+escapeHtml(w.display_name)+'</option>').join('')+'</select></label><label>Бригада<select name="teamId">'+teamOptions()+'</select></label><label>Дата начала<input name="validFrom" type="date" required value="'+localDate()+'"></label><button>Назначить</button></form></div><div class="card"><h2>Создать бригаду</h2><form id="teamForm"><label>Название<input name="name" required></label><button>Создать бригаду</button></form></div>':'')+
- (canAttendance?'<div class="card"><h2>Кто сегодня работал</h2><form id="attendanceForm"><label>Дата<input type="date" name="workDate" required value="'+localDate()+'"></label><label>Бригада<select name="teamId">'+teamOptions()+'</select></label><div id="attendanceChecklist" class="checklist"><p class="muted">Загрузка состава бригады…</p></div><button>Сохранить присутствие</button></form><p class="muted">Отмечаются только те, кто работал. Причины отсутствия не записываются.</p></div>':'');
+ (canManage?'<div class="card"><h2>Добавить работника</h2><form id="workerForm"><label>Имя<input name="displayName" required></label><button>Добавить</button></form></div><div class="card"><h2>Назначить работника в бригаду</h2><form id="membershipForm"><label>Работник<select name="workerId">'+state.workers.map(w=>'<option value="'+w.id+'">'+escapeHtml(w.display_name)+'</option>').join('')+'</select></label><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p><label>Дата начала<input name="validFrom" type="date" required value="'+localDate()+'"></label><button>Назначить</button></form></div><div class="card"><h2>Создать бригаду</h2><form id="teamForm"><label>Название<input name="name" required></label><button>Создать бригаду</button></form></div>':'')+
+ (canAttendance?'<div class="card"><h2>Кто сегодня работал</h2><form id="attendanceForm"><label>Дата<input type="date" name="workDate" required value="'+localDate()+'"></label><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p><div id="attendanceChecklist" class="checklist"><p class="muted">Загрузка состава бригады…</p></div><button>Сохранить присутствие</button></form><p class="muted">Отмечаются только те, кто работал. Причины отсутствия не записываются.</p></div>':'');
  document.querySelectorAll('.archiveWorker').forEach(b=>b.onclick=async()=>{if(!confirm('Архивировать работника? История производства и присутствия сохранится.'))return;try{await api('/workers/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Работник архивирован');await loadBase();people()}catch(err){notify(err.message,'error')}});
  const wf=$('#workerForm');if(wf)wf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/workers',{method:'POST',body:JSON.stringify({displayName:new FormData(wf).get('displayName')})});notify('Работник добавлен');people()}catch(err){notify(err.message,'error')}});
  const mf=$('#membershipForm');if(mf)mf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(mf));try{await api('/team-memberships',{method:'POST',body:JSON.stringify(d)});notify('Работник назначен в бригаду');await loadBase();people()}catch(err){notify(err.message,'error')}});
- const tf=$('#teamForm');if(tf)tf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/teams',{method:'POST',body:JSON.stringify({name:new FormData(tf).get('name')})});notify('Бригада создана');await loadBase();people()}catch(err){notify(err.message,'error')}});
  const af=$('#attendanceForm');
  const loadAttendancePeople=async()=>{
    if(!af)return;
-   const date=af.elements.workDate.value,teamId=af.elements.teamId.value,box=$('#attendanceChecklist');
+   const date=af.elements.workDate.value,teamId=singleTeamId(),box=$('#attendanceChecklist');
    if(!date||!teamId)return;
    try{
      const [members,attendance]=await Promise.all([
-       api('/team-members?teamId='+encodeURIComponent(teamId)+'&date='+encodeURIComponent(date)),
+       api('/team-members?date='+encodeURIComponent(date)),
        api('/attendance?date='+encodeURIComponent(date))
      ]);
      const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
@@ -94,7 +93,7 @@ async function people(){
  };
  if(af){
    af.elements.workDate.addEventListener('change',loadAttendancePeople);
-   af.elements.teamId.addEventListener('change',loadAttendancePeople);
+   
    loadAttendancePeople();
    af.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(af);try{await api('/attendance',{method:'POST',body:JSON.stringify({workDate:fd.get('workDate'),teamId:fd.get('teamId'),workerIds:fd.getAll('workerIds')})});notify('Присутствие сохранено');await loadAttendancePeople()}catch(err){notify(err.message,'error')}});
  }
