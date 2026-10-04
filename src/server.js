@@ -972,7 +972,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
       earnings:[...workerTotals.entries()].map(([workerId,amount])=>({workerId,amountMinor:amount.toString()})),
       ratesEntered:true,
-      happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId}};
+      happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
