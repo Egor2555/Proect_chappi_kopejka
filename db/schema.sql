@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   pin_ciphertext TEXT,
   pin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   pin_failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (pin_failed_attempts >= 0),
-  pin_locked BOOLEAN NOT NULL DEFAULT FALSE
+  pin_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  last_activity_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS teams (
@@ -269,3 +270,6 @@ CREATE TABLE IF NOT EXISTS shipment_allocations (
   UNIQUE(shipment_item_id, inventory_movement_id)
 );
 CREATE INDEX IF NOT EXISTS idx_shipment_allocations_inventory ON shipment_allocations(inventory_movement_id);
+
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;
