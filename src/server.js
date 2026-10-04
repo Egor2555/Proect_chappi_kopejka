@@ -1,5 +1,6 @@
 const express = require('express');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
@@ -7,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const app = express();
+app.set('trust proxy', 1);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined });
 const PORT = Number(process.env.PORT || 8080);
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -17,6 +19,7 @@ if (!process.env.DATABASE_URL || !JWT_SECRET) {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Слишком много попыток входа. Попробуйте позже.' } }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 async function audit(client, actor, action, type, id, beforeData, afterData, reason) {
