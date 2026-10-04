@@ -27,21 +27,30 @@ async function must(path, options, expected=200) {
   const teams=await must('/api/teams',{token:admin});
   assert.ok(teams.length);
   const product=products.find(p=>p.length_mm===1500);
+  const product2=products.find(p=>p.length_mm===2000);
+  const product25=products.find(p=>p.length_mm===2500);
   const team=teams[0];
   const today=new Date().toISOString().slice(0,10);
+  const d1=new Date(today+'T00:00:00Z'); d1.setUTCDate(d1.getUTCDate()-2);
+  const d2=new Date(today+'T00:00:00Z'); d2.setUTCDate(d2.getUTCDate()-1);
+  const day1=d1.toISOString().slice(0,10), day2=d2.toISOString().slice(0,10);
   const month=today.slice(0,7)+'-01';
 
-  const worker=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Test Worker'}},201);
-  await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:worker.id,teamId:team.id,validFrom:today}},201);
+  const worker=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker F'}},201);
+  const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
+  const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
+  for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
   await must('/api/users',{token:admin,method:'POST',body:{username:'ci-worker',password:'TestWorkerPassword123',role:'worker',workerId:worker.id}},201);
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id]}});
+  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
+  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
+  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
   const attendance=await must('/api/attendance?date='+today,{token:admin});
-  assert.equal(attendance.length,1);
+  assert.equal(attendance.length,3);
 
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
   const orderB=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-B',title:'CI surplus order',priority:2,items:[{productId:product.id,requiredQty:1}]}},201);
 
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
+  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
   const orders=await must('/api/orders',{token:admin});
   assert.equal(orders.find(o=>o.id===orderA.id).status,'completed');
   assert.equal(orders.find(o=>o.id===orderB.id).status,'completed');
@@ -59,15 +68,21 @@ async function must(path, options, expected=200) {
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
-  const productionHistory=await must('/api/production?date='+today,{token:admin});
-  assert.equal(productionHistory.length,1);
+  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
+  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
+  const productionHistory=await must('/api/production?date='+day1,{token:admin});
+  assert.equal(productionHistory.length,2);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.deepEqual(beforeRates.missingRates,[1500]);
-  assert.equal(beforeRates.total.totalMinor,'0');
+  assert.deepEqual(beforeRates.missingRates.sort((a,b)=>a-b),[1500,2000,2500]);
+  assert.equal(beforeRates.total.quantity,453);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}},201);
+  await must('/api/rates',{token:admin,method:'POST',body:{productId:product2.id,periodMonth:month,amountMinor:1000}},201);
+  await must('/api/rates',{token:admin,method:'POST',body:{productId:product25.id,periodMonth:month,amountMinor:1500}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(report.total.quantity,3);
-  assert.equal(report.total.totalMinor,'375');
+  assert.equal(report.total.quantity,453);
+  assert.equal(report.total.totalMinor,'525375');
 
   await must('/api/fund',{token:admin,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1000,note:'CI fund'}},201);
   const fund=await must('/api/fund',{token:admin});
@@ -77,9 +92,12 @@ async function must(path, options, expected=200) {
   await must('/api/orders/'+orderB.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}},201);
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(closedReport.earnings.length,1);
-  assert.equal(closedReport.earnings[0].amount_minor,'375');
-  assert.equal(closedReport.total.totalMinor,'375');
+  assert.equal(closedReport.earnings.length,3);
+  const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
+  assert.equal(earned[worker.id],'200125');
+  assert.equal(earned[workerS.id],'125125');
+  assert.equal(earned[workerC.id],'200125');
+  assert.equal(closedReport.total.totalMinor,'525375');
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
