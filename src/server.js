@@ -142,7 +142,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   const {workerId,teamId,validFrom}=req.body;
   if(!workerId||!teamId||!validFrom) return res.status(400).json({error:'Выберите работника, бригаду и дату'});
   const result=await tx(async c=>{
-    await c.query('UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL',[validFrom,workerId]);
+    await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL",[validFrom,workerId]);
     return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,teamId,validFrom])).rows[0];
   });
   res.status(201).json(result);
