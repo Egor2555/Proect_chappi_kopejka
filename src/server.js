@@ -39,6 +39,8 @@ async function recordPinFailure(user) {
 async function ensureAccessProfiles() {
   // Migration for shipment-to-production traceability. It lets payroll value
   // only actually shipped units while preserving the original production day.
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
   await pool.query(`CREATE TABLE IF NOT EXISTS shipment_allocations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shipment_item_id UUID NOT NULL REFERENCES shipment_items(id) ON DELETE RESTRICT,
