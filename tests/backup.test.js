@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateBackup, validateBackupRelations, buildRestorePlan, REQUIRED_TABLES } = require('../src/backup');
+const { validateBackup, validateBackupRelations, buildRestorePlan, REQUIRED_TABLES, RESTORE_ORDER } = require('../src/backup');
 
 
 function validBackup() {
@@ -59,6 +59,7 @@ test('restore plan is non-destructive dry-run', () => {
   assert.equal(plan.mode, 'dry-run');
   assert.equal(plan.destructive, false);
   assert.equal(plan.passwordHashesRestored, false);
+  assert.deepEqual(plan.restoreOrder, RESTORE_ORDER);
 });
 
 
