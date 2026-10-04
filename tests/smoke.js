@@ -81,6 +81,10 @@ async function must(path, options, expected=200) {
   assert.equal(denied.status,403);
   const deniedProduction=await request('/api/production?date='+today,{token:workerLogin.token});
   assert.equal(deniedProduction.status,403);
+  const deniedOldReport=await request('/api/reports/monthly?month=2020-01',{token:workerLogin.token});
+  assert.equal(deniedOldReport.status,403);
+  await must('/api/reports/monthly?month='+today.slice(0,7),{token:workerLogin.token});
+  await must('/api/archive/months',{token:workerLogin.token});
 
   await must('/api/admin/mode-event',{token:admin,method:'POST',body:{}},201);
   const log=await must('/api/admin/login-log',{token:admin});
