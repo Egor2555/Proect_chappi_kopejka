@@ -738,6 +738,10 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
+    // Serialize shipments with month closure. Without the shared lock, a shipment
+    // could pass the "open month" check while close-month freezes its snapshot.
+    const currentMonthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
     const closedMonth=(await c.query(`SELECT 1 FROM monthly_closures
       WHERE period_month=date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date)`)).rowCount>0;
     if(closedMonth) throw new Error('Текущий месяц уже закрыт. Новые отгрузки запрещены.');
