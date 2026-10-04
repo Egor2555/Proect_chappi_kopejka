@@ -269,6 +269,14 @@ CREATE TABLE IF NOT EXISTS shipment_allocations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(shipment_item_id, inventory_movement_id)
 );
+ALTER TABLE shipment_allocations ADD COLUMN IF NOT EXISTS reservation_movement_id UUID REFERENCES inventory_movements(id) ON DELETE RESTRICT;
+ALTER TABLE shipment_allocations DROP CONSTRAINT IF EXISTS shipment_allocations_shipment_item_id_inventory_movement_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_reserved_unique
+  ON shipment_allocations(shipment_item_id,reservation_movement_id)
+  WHERE reservation_movement_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_free_unique
+  ON shipment_allocations(shipment_item_id,inventory_movement_id)
+  WHERE reservation_movement_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_shipment_allocations_inventory ON shipment_allocations(inventory_movement_id);
 
 
