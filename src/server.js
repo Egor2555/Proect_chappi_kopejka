@@ -481,7 +481,9 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   const month=String(req.body.month||'');
   if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
-  let result;\n  try {\n    result=await tx(async c=>{
+  let result;
+  try {
+    result=await tx(async c=>{
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
     const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
@@ -533,7 +535,14 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
     return closure;
-  });
+    });
+  } catch (error) {
+    // The UNIQUE(period_month) constraint is the final guard against two admins
+    // closing the same month concurrently. Turn that race into a clear client error.
+    if(error && error.code==='23505' && String(error.constraint||'').includes('monthly_closures'))
+      return res.status(409).json({error:'Этот месяц уже закрыт'});
+    throw error;
+  }
   res.status(201).json(result);
 }));
 
