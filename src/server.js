@@ -57,7 +57,15 @@ async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
   if (!columns.length) return;
   if (columns.some(column => !/^[a-z_][a-z0-9_]*$/.test(column)))
     throw new Error('Недопустимое имя поля в backup: ' + table);
-  const placeholders = columns.map((_, i) => '
+  const placeholders = columns.map((_, i) => '$' + (i + 1)).join(',');
+  const values = columns.map(column => mapped[column]);
+  let sql = 'INSERT INTO ' + table + '(' + columns.join(',') + ') VALUES(' + placeholders + ')';
+  if (upsert) {
+    const updates = columns.filter(column => column !== 'id').map(column => column + '=EXCLUDED.' + column);
+    if (updates.length) sql += ' ON CONFLICT(id) DO UPDATE SET ' + updates.join(',');
+  }
+  await client.query(sql, values);
+}
 
 app.get('/api/health', asyncRoute(async (_req,res) => {
   await pool.query('SELECT 1');
