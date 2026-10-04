@@ -420,6 +420,8 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {orderNumber,title,priority=0,items=[]}=req.body;
   if(!orderNumber||!title||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Заполните заказ и его позиции'});
   const order=await tx(async c=>{
+    // Serialize queue decisions so two simultaneous order creations cannot both become active.
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
     const o=(await c.query('INSERT INTO orders(order_number,title,priority,created_by) VALUES($1,$2,$3,$4) RETURNING *',[orderNumber,title,Number(priority)||0,req.user.sub])).rows[0];
     for(const item of items){
       if(!Number.isInteger(Number(item.requiredQty))||Number(item.requiredQty)<=0) throw new Error('Количество в заказе должно быть положительным целым числом');
