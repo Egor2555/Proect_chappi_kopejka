@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { calculateTotalMinor, allocateProduction } = require('../src/domain');
-const { simulateHappyKopeck } = require('../src/penny');
+const { chooseHappyKopeckWinner } = require('../src/penny');
 
 test('money multiplication uses exact integer minor units', () => {
   assert.equal(calculateTotalMinor(125, 3), '375');
@@ -34,6 +34,15 @@ test('no demand leaves all production as free stock', () => {
   assert.deepEqual(allocateProduction(7, 0, []), { allocations:[], freeStock:7 });
 });
 
-test('Happy Kopeck stays disabled until its real rule is recovered', () => {
-  assert.throws(simulateHappyKopeck, error => error.code === 'PENNY_ALGORITHM_NOT_APPROVED');
+test('Happy Kopeck selects one eligible worker using injected randomness', () => {
+  const result=chooseHappyKopeckWinner(3,['w1','w2','w3'],(min,max)=>1);
+  assert.deepEqual(result,{amountMinor:'3',winnerId:'w2',badge:'🏆'});
+});
+
+test('Happy Kopeck has no winner when no residual remains', () => {
+  assert.deepEqual(chooseHappyKopeckWinner(0,['w1'],()=>0),{amountMinor:'0',winnerId:null,badge:null});
+});
+
+test('Happy Kopeck rejects missing eligible recipients for a positive residual', () => {
+  assert.throws(()=>chooseHappyKopeckWinner(1,[]),/No eligible workers/);
 });
