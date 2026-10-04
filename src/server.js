@@ -103,13 +103,17 @@ async function audit(client, actor, action, type, id, beforeData, afterData, rea
   );
 }
 async function auth(req, res, next) {
-  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const token = (req.headers.authorization || '').replace(/^Bearer\\s+/i, '');
   try {
     if (!token) throw new Error('missing');
     req.user = jwt.verify(token, JWT_SECRET);
+    if (!['admin','brigadier','worker'].includes(req.user.role)) throw new Error('invalid role');
+    // Re-check every profile against the database on every request. This revokes
+    // stale tokens immediately when an account is archived, disabled, or rebound.
+    const session=(await pool.query('SELECT active,role,worker_id,last_activity_at FROM users WHERE id=$1',[req.user.sub])).rows[0];
+    if (!session || !session.active || session.role !== req.user.role ||
+        String(session.worker_id || '') !== String(req.user.workerId || '')) throw new Error('inactive or stale profile');
     if (['admin','brigadier'].includes(req.user.role)) {
-      const session=(await pool.query('SELECT active,last_activity_at FROM users WHERE id=$1',[req.user.sub])).rows[0];
-      if (!session || !session.active) throw new Error('inactive');
       if (session.last_activity_at && Date.now() - new Date(session.last_activity_at).getTime() > 30*60*1000) {
         return res.status(401).json({ error: 'Сеанс администратора/бригадира завершён после 30 минут бездействия. Войдите снова.' });
       }
@@ -118,6 +122,7 @@ async function auth(req, res, next) {
     next();
   } catch { res.status(401).json({ error: 'Требуется вход в систему' }); }
 }
+
 function roles(...allowed) {
   return (req, res, next) => allowed.includes(req.user.role)
     ? next() : res.status(403).json({ error: 'Недостаточно прав' });
