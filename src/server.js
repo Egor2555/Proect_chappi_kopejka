@@ -289,19 +289,30 @@ app.post('/api/users', auth, roles('admin'), asyncRoute(async (_req,res) => {
 }));
 
 app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {workerId,teamId,validFrom}=req.body;
-  if(!workerId||!teamId||!validFrom) return res.status(400).json({error:'Выберите работника, бригаду и дату'});
+  const {workerId,validFrom}=req.body;
+  if(!workerId||!validFrom) return res.status(400).json({error:'Выберите работника и дату'});
   const result=await tx(async c=>{
+    const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+    if(!team) throw new Error('Единственная бригада не настроена');
     await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL",[validFrom,workerId]);
-    return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,teamId,validFrom])).rows[0];
+    return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,team.id,validFrom])).rows[0];
   });
   res.status(201).json(result);
 }));
+app.delete('/api/team-memberships/:workerId', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const workerId=String(req.params.workerId);
+  const validTo=String(req.body.validTo||new Date().toISOString().slice(0,10));
+  const r=await pool.query("UPDATE team_memberships SET valid_to=$1::date WHERE worker_id=$2 AND valid_to IS NULL RETURNING *",[validTo,workerId]);
+  if(!r.rowCount) return res.status(404).json({error:'Работник сейчас не состоит в бригаде'});
+  res.json(r.rows[0]);
+}));
 
 app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
-  const teamId=String(req.query.teamId||'');
   const date=String(req.query.date||'');
-  if(!teamId||!/\d{4}-\d{2}-\d{2}/.test(date)) return res.status(400).json({error:'Укажите бригаду и дату'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату'});
+  const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+  if(!team) return res.status(500).json({error:'Единственная бригада не настроена'});
+  const teamId=team.id;
   if(req.user.role==='brigadier' && !(await pool.query(
     'SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
     [req.user.workerId,teamId,date])).rowCount) return res.status(403).json({error:'Можно просматривать только свою бригаду'});
@@ -321,15 +332,20 @@ app.get('/api/attendance', auth, asyncRoute(async (req,res) => {
   res.json(r.rows);
 }));
 
-app.get('/api/teams', auth, asyncRoute(async (_req,res) => res.json((await pool.query('SELECT * FROM teams WHERE active=true ORDER BY name')).rows)));
-app.post('/api/teams', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const name=String(req.body.name||'').trim(); if(!name) return res.status(400).json({error:'Укажите название бригады'});
-  const r=await pool.query('INSERT INTO teams(name) VALUES($1) RETURNING *',[name]); res.status(201).json(r.rows[0]);
+app.get('/api/teams', auth, asyncRoute(async (_req,res) => {
+  const r=await pool.query("SELECT * FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1");
+  res.json(r.rows);
+}));
+app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  res.status(409).json({error:'В Chappi Edition предусмотрена только одна бригада. Её название не создаётся повторно.'});
 }));
 
 app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
-  const {workDate,teamId,workerIds=[]}=req.body;
-  if(!workDate||!teamId||!Array.isArray(workerIds)) return res.status(400).json({error:'Недостаточно данных'});
+  const {workDate,workerIds=[]}=req.body;
+  if(!workDate||!Array.isArray(workerIds)) return res.status(400).json({error:'Недостаточно данных'});
+  const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+  if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
+  const teamId=singleTeam.id;
   if(req.user.role==='brigadier') {
     const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
       [req.user.workerId,teamId,workDate]);
@@ -405,9 +421,12 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
 }));
 
 app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
-  const {workDate,teamId,productId,orderId=null,quantity,note=''}=req.body;
-  if(!workDate||!teamId||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
-    return res.status(400).json({error:'Проверьте дату, бригаду, изделие и количество'});
+  const {workDate,productId,orderId=null,quantity,note=''}=req.body;
+  if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
+    return res.status(400).json({error:'Проверьте дату, изделие и количество'});
+  const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+  if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
+  const teamId=singleTeam.id;
   if(req.user.role==='brigadier') {
     const allowed=await pool.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
       [req.user.workerId,teamId,workDate]);
@@ -869,6 +888,7 @@ async function start() {
       [`60x40-${length}`,length]);
   }
   await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
+  await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams ORDER BY created_at,id LIMIT 1)");
   await ensureAccessProfiles();
   const initial=process.env.INITIAL_ADMIN_PASSWORD;
   if(initial) {
