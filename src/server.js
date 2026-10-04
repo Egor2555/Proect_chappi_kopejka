@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const { calculateMonthlyWorkerEarnings } = require('./domain');
+const { validateBackup } = require('./backup');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -595,6 +596,7 @@ app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) =
   const backup={format:'chappi-backup-v1',createdAt:new Date().toISOString(),tables:{}};
   for(const table of tables) backup.tables[table]=(await pool.query('SELECT * FROM '+table)).rows;
   backup.tables.users=(await pool.query('SELECT id,username,role,worker_id,active,created_at FROM users')).rows;
+  validateBackup(backup);
   res.setHeader('Content-Type','application/json; charset=utf-8');
   res.setHeader('Content-Disposition','attachment; filename="chappi-backup.json"');
   res.send(JSON.stringify(backup,null,2));
