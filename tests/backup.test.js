@@ -110,3 +110,44 @@ test('restore remaps user foreign keys to preserved local accounts', () => {
   assert.equal(row.created_by,'new-admin');
   assert.throws(() => remapUserReferences('orders', {created_by:'missing'}, {}), /сопоставить пользователя/);
 });
+
+
+test('backup relation validator accepts reservation movement references', () => {
+  const backup = validBackup();
+  backup.tables.workers.push({id:'w1'});
+  backup.tables.teams.push({id:'t1'});
+  backup.tables.products.push({id:'p1'});
+  backup.tables.orders.push({id:'o1'});
+  backup.tables.production_entries.push({id:'pe1',team_id:'t1',product_id:'p1',order_id:'o1'});
+  backup.tables.inventory_movements.push({id:'im-res',product_id:'p1',production_entry_id:'pe1',order_id:'o1'});
+  backup.tables.shipments.push({id:'s1',order_id:'o1'});
+  backup.tables.shipment_items.push({id:'si1',shipment_id:'s1',product_id:'p1'});
+  backup.tables.shipment_allocations.push({
+    id:'sa1',shipment_item_id:'si1',inventory_movement_id:'im-res',
+    reservation_movement_id:'im-res',quantity:2
+  });
+  assert.equal(validateBackupRelations(backup), true);
+});
+
+test('backup relation validator rejects dangling reservation movement', () => {
+  const backup = validBackup();
+  backup.tables.shipment_allocations.push({
+    id:'sa1',shipment_item_id:'missing-item',inventory_movement_id:'missing-movement',
+    reservation_movement_id:'missing-reservation',quantity:1
+  });
+  assert.throws(() => validateBackupRelations(backup), /Нарушена связь/);
+});
+
+test('restore plan blocks worker identity mismatch', () => {
+  const backup = validBackup();
+  backup.tables.workers.push({id:'backup-worker'});
+  backup.tables.users.push({
+    id:'backup-user',username:'brigadier',role:'brigadier',
+    worker_id:'backup-worker',active:true
+  });
+  const plan = buildRestorePlan(backup,[
+    {id:'current-user',username:'brigadier',worker_id:'current-worker'}
+  ]);
+  assert.equal(plan.safeToRestore,false);
+  assert.equal(plan.currentUsersWithWorkerMismatch.length,1);
+});
