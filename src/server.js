@@ -225,6 +225,8 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
     if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
   }
   const created=await tx(async c=>{
+    // Serialize attendance replacement for the same brigade/day so two saves cannot overwrite each other mid-transaction.
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:attendance:' || $1 || ':' || $2))",[workDate,teamId]);
     const month=String(workDate).slice(0,7)+'-01';
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount)
       throw new Error('Этот месяц уже закрыт. Посещаемость изменять нельзя.');
