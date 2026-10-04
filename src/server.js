@@ -644,7 +644,7 @@ app.post('/api/fund', auth, roles('admin'), asyncRoute(async (req,res) => {
 
 app.get('/api/archive/months', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT * FROM monthly_closures
-    WHERE period_month >= date_trunc('month',CURRENT_DATE - INTERVAL '5 months')::date
+    WHERE period_month >= date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date - INTERVAL '5 months')::date
     ORDER BY period_month DESC`);
   res.json(r.rows);
 }));
