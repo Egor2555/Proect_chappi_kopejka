@@ -9,8 +9,8 @@
   <header class="topbar"><div><strong>CHAPPI EDITION</strong><small>Учёт производства столбов 60×40</small></div><div class="row top-actions"><div id="userBadge"></div><button id="logoutGlobal" hidden>Выйти</button></div></header>
   <main>
     <section id="loginView" class="panel login">
-      <h1>Вход в систему</h1><p class="muted">Введите выданные администратором данные.</p>
-      <form id="loginForm"><label>Логин<input name="username" autocomplete="username" required></label><label>Пароль<input name="password" type="password" autocomplete="current-password" required></label><button>Войти</button></form>
+      <h1>Вход в систему</h1><p class="muted">Выберите профиль. Администратор входит через «Бригадир» своим PIN.</p>
+      <form id="loginForm"><div class="profile-choice"><button type="button" data-login-profile="brigadier">Бригадир</button><button type="button" data-login-profile="worker">Работник</button></div><input type="hidden" name="profile" value="brigadier"><label id="pinLabel">PIN<input name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8"></label><button>Войти</button></form>
       <p id="loginError" class="error" role="alert"></p>
     </section>
     <section id="appView" hidden>
