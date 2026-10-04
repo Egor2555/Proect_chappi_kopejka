@@ -469,7 +469,10 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
           SELECT 1
           FROM shipment_allocations sa
           JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+          JOIN shipment_items si ON si.id=sa.shipment_item_id
+          JOIN shipments s ON s.id=si.shipment_id
           WHERE im.production_entry_id=a.production_entry_id
+            AND s.order_id=a.order_id
         )`,[orderId]);
     const before=order;
     const after=(await c.query(`UPDATE orders SET status='cancelled',completed_at=NULL,cancelled_at=now(),cancel_reason=$2
