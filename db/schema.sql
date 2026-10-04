@@ -213,7 +213,7 @@ INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING;
 CREATE TABLE IF NOT EXISTS fund_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   entry_date DATE NOT NULL,
-  entry_type TEXT NOT NULL CHECK (entry_type IN ('income','expense','adjustment')),
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('income','expense')),
   amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
   note TEXT NOT NULL,
   created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
