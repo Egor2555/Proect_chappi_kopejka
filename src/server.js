@@ -162,12 +162,14 @@ app.post('/api/auth/recovery/request', recoveryRequestLimiter, asyncRoute(async 
   if(!process.env.RESEND_API_KEY || !process.env.RECOVERY_FROM_EMAIL)
     return res.status(503).json({error:'Отправка почты ещё не настроена. Администратору нужно подключить почтовый сервис в настройках Railway.'});
   const code=String(crypto.randomInt(0,100000000)).padStart(8,'0');
-  const codeHash=crypto.createHash('sha256').update(code).digest('hex');
+  const codeHash=crypto.createHmac('sha256',process.env.JWT_SECRET).update(code).digest('hex');
   const expiresAt=new Date(Date.now()+ADMIN_RECOVERY_TTL_MS);
   const recovery=await tx(async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:admin-recovery'))");
-    await c.query("UPDATE admin_recovery_codes SET used_at=COALESCE(used_at,now()) WHERE user_id=$1 AND used_at IS NULL",[admin.id]);
-    return (await c.query('INSERT INTO admin_recovery_codes(user_id,code_hash,expires_at) VALUES($1,$2,$3) RETURNING id',[admin.id,codeHash,expiresAt])).rows[0];
+    const lockedAdmin=(await c.query("SELECT id,pin_locked FROM users WHERE role='admin' AND active=true FOR UPDATE")).rows[0];
+    if(!lockedAdmin || !lockedAdmin.pin_locked) throw new Error('Профиль администратора уже не заблокирован.');
+    await c.query("UPDATE admin_recovery_codes SET used_at=COALESCE(used_at,now()) WHERE user_id=$1 AND used_at IS NULL",[lockedAdmin.id]);
+    return (await c.query('INSERT INTO admin_recovery_codes(user_id,code_hash,expires_at) VALUES($1,$2,$3) RETURNING id',[lockedAdmin.id,codeHash,expiresAt])).rows[0];
   });
   try {
     const response=await fetch('https://api.resend.com/emails',{
@@ -193,7 +195,7 @@ app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async 
   const newPin=String(req.body.newPin||'');
   if(!/^\d{8}$/.test(code)) return res.status(400).json({error:'Введите восьмизначный код из письма.'});
   if(!validPin(newPin)) return res.status(400).json({error:'Новый PIN должен содержать от 4 до 8 цифр.'});
-  const codeHash=crypto.createHash('sha256').update(code).digest('hex');
+  const codeHash=crypto.createHmac('sha256',process.env.JWT_SECRET).update(code).digest('hex');
   const result=await tx(async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:admin-recovery'))");
     const admin=(await c.query("SELECT id,username,pin_locked FROM users WHERE role='admin' AND active=true FOR UPDATE")).rows[0];
