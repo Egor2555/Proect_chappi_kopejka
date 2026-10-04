@@ -9,12 +9,52 @@ const { chooseHappyKopeckWinner } = require('./penny');
 const { validateBackup, validateBackupRelations, buildRestorePlan, remapUserReferences, RESTORE_ORDER } = require('./backup');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const app = express();
 app.set('trust proxy', 1);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined });
 const PORT = Number(process.env.PORT || 8080);
 const JWT_SECRET = process.env.JWT_SECRET;
+const PIN_KEY = crypto.createHash('sha256').update('Chappi Edition PIN storage:' + JWT_SECRET).digest();
+function encryptPin(pin) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', PIN_KEY, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(pin), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv.toString('base64url'), tag.toString('base64url'), ciphertext.toString('base64url')].join(':');
+}
+function decryptPin(value) {
+  if (!value) return null;
+  const [ivText, tagText, dataText] = String(value).split(':');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', PIN_KEY, Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+}
+function validPin(pin) { return /^\\d{4,8}$/.test(String(pin)); }
+async function recordPinFailure(user) {
+  const r = await pool.query('UPDATE users SET pin_failed_attempts=pin_failed_attempts+1, pin_locked=(pin_failed_attempts+1)>=5 WHERE id=$1 RETURNING pin_failed_attempts,pin_locked',[user.id]);
+  return r.rows[0];
+}
+async function ensureAccessProfiles() {
+  const randomSecret = () => crypto.randomBytes(32).toString('hex');
+  for (const role of ['admin','brigadier','worker']) {
+    const rows = (await pool.query('SELECT id,username FROM users WHERE role=$1 ORDER BY created_at,id',[role])).rows;
+    if (!rows.length) {
+      const username = role === 'admin' ? 'admin' : role === 'brigadier' ? 'brigadier' : 'workers';
+      const hash = await bcrypt.hash(randomSecret(), 12);
+      await pool.query('INSERT INTO users(username,password_hash,role,pin_ciphertext,pin_enabled) VALUES($1,$2,$3,$4,$5)',
+        [username, hash, role, role === 'admin' ? encryptPin('2505') : role === 'brigadier' ? encryptPin('1111') : null, role !== 'worker']);
+    } else if (rows.length > 1) {
+      await pool.query('UPDATE users SET active=false WHERE role=$1 AND id<>$2',[role,rows[0].id]);
+    }
+  }
+  const admin=(await pool.query("SELECT id,pin_ciphertext FROM users WHERE role='admin' AND active=true LIMIT 1")).rows[0];
+  if (admin && !admin.pin_ciphertext) await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin('2505'),admin.id]);
+  const brig=(await pool.query("SELECT id,pin_ciphertext FROM users WHERE role='brigadier' AND active=true LIMIT 1")).rows[0];
+  if (brig && !brig.pin_ciphertext) await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin('1111'),brig.id]);
+  await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS users_one_active_role_idx ON users(role) WHERE active=true");
+}
 if (!process.env.DATABASE_URL || !JWT_SECRET) {
   console.error('DATABASE_URL and JWT_SECRET are required.');
   process.exit(1);
@@ -73,18 +113,66 @@ app.get('/api/health', asyncRoute(async (_req,res) => {
 }));
 
 app.post('/api/auth/login', asyncRoute(async (req,res) => {
-  const username = String(req.body.username || '').trim();
-  const password = String(req.body.password || '');
-  const found = await pool.query('SELECT id,username,password_hash,role,worker_id,active FROM users WHERE username=$1', [username]);
-  const user = found.rows[0];
-  const ok = !!user && user.active && await bcrypt.compare(password, user.password_hash);
-  await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,$3)', [user?.id || null, username || '(empty)', ok]);
-  if (!ok) return res.status(401).json({ error: 'Неверный логин или пароль' });
+  const profile = String(req.body.profile || '').trim();
+  const pin = String(req.body.pin || '');
+  if (!['worker','brigadier'].includes(profile)) return res.status(400).json({error:'Выберите профиль входа'});
+  const candidates = (await pool.query('SELECT id,username,password_hash,role,worker_id,active,pin_ciphertext,pin_enabled,pin_failed_attempts,pin_locked FROM users WHERE active=true AND role IN ($1,$2) ORDER BY role',[profile,'admin'])).rows;
+  const worker = candidates.find(x=>x.role==='worker');
+  const brigadier = candidates.find(x=>x.role==='brigadier');
+  const admin = candidates.find(x=>x.role==='admin');
+  let user = null;
+  if (profile === 'worker') {
+    user = worker;
+    if (!user) return res.status(401).json({error:'Профиль работников не настроен. Обратитесь к администратору.'});
+    if (user.pin_locked) return res.status(423).json({error:'Профиль заблокирован после 5 неверных попыток. Обратитесь к администратору.'});
+    if (user.pin_enabled) {
+      if (!pin) return res.status(401).json({error:'Введите PIN работника'});
+      if (decryptPin(user.pin_ciphertext) !== pin) {
+        const failed=await recordPinFailure(user);
+        await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,false)',[user.id,'worker']);
+        return res.status(failed.pin_locked?423:401).json({error:failed.pin_locked?'Профиль заблокирован после 5 неверных попыток. Обратитесь к администратору.':'Неверный PIN'});
+      }
+    }
+  } else {
+    if (admin && !admin.pin_locked && decryptPin(admin.pin_ciphertext) === pin) user=admin;
+    else if (brigadier && !brigadier.pin_locked && decryptPin(brigadier.pin_ciphertext) === pin) user=brigadier;
+    else {
+      const target = admin && !admin.pin_locked ? admin : brigadier;
+      if (target) {
+        const failed=await recordPinFailure(target);
+        await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,false)',[target.id,'brigadier']);
+        return res.status(failed.pin_locked?423:401).json({error:failed.pin_locked?'Профиль заблокирован после 5 неверных попыток. Обратитесь к администратору.':'Неверный PIN'});
+      }
+      return res.status(401).json({error:'Профиль бригадира не настроен. Обратитесь к администратору.'});
+    }
+  }
+  await pool.query('UPDATE users SET pin_failed_attempts=0,pin_locked=false WHERE id=$1',[user.id]);
+  await pool.query('INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,$2,true)',[user.id,profile]);
   const token = jwt.sign({ sub:user.id, username:user.username, role:user.role, workerId:user.worker_id }, JWT_SECRET, { expiresIn:'12h' });
-  res.json({ token, user:{ id:user.id, username:user.username, role:user.role, workerId:user.worker_id } });
+  res.json({token,user:{id:user.id,username:user.username,role:user.role,workerId:user.worker_id}});
 }));
 
 app.get('/api/me', auth, (req,res) => res.json({ user:req.user }));
+
+app.get('/api/admin/access', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  const rows=await pool.query("SELECT id,role,pin_enabled,pin_locked,pin_failed_attempts FROM users WHERE role IN ('admin','brigadier','worker') AND active=true ORDER BY CASE role WHEN 'admin' THEN 1 WHEN 'brigadier' THEN 2 ELSE 3 END");
+  res.json(rows.rows.map(x=>({role:x.role,pinEnabled:x.pin_enabled,pin:x.pin_enabled?decryptPin(x.pin_ciphertext):null,locked:x.pin_locked,failedAttempts:x.pin_failed_attempts})));
+}));
+app.patch('/api/admin/access/:role', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const role=String(req.params.role); if(!['admin','brigadier','worker'].includes(role)) return res.status(400).json({error:'Недопустимый профиль'});
+  const pin=req.body.pin===null||req.body.pin===''?null:String(req.body.pin);
+  if(pin!==null&&!validPin(pin)) return res.status(400).json({error:'PIN должен содержать от 4 до 8 цифр'});
+  const r=await pool.query('SELECT id,role FROM users WHERE role=$1 AND active=true LIMIT 1',[role]); if(!r.rowCount) return res.status(404).json({error:'Профиль не найден'});
+  await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=$2,pin_failed_attempts=0,pin_locked=false WHERE id=$3',[pin?encryptPin(pin):null,!!pin,r.rows[0].id]);
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data,reason) VALUES($1,'change_pin','access_profile',$2,$3,$4)",[req.user.sub,r.rows[0].id,JSON.stringify({role,pinEnabled:!!pin}),'PIN изменён администратором']);
+  res.json({ok:true,pinEnabled:!!pin});
+}));
+app.post('/api/admin/access/:role/unlock', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const role=String(req.params.role); if(!['admin','brigadier','worker'].includes(role)) return res.status(400).json({error:'Недопустимый профиль'});
+  const r=await pool.query('UPDATE users SET pin_failed_attempts=0,pin_locked=false WHERE role=$1 AND active=true RETURNING role',[role]); if(!r.rowCount) return res.status(404).json({error:'Профиль не найден'});
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,reason) VALUES($1,'unlock_pin','access_profile',$2,$3)",[req.user.sub,r.rows[0].role,'Разблокировка PIN']);
+  res.json({ok:true});
+}));
 
 app.post('/api/auth/change-password', auth, asyncRoute(async (req,res) => {
   const {currentPassword,newPassword}=req.body;
@@ -748,6 +836,7 @@ async function start() {
       [`60x40-${length}`,length]);
   }
   await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
+  await ensureAccessProfiles();
   const initial=process.env.INITIAL_ADMIN_PASSWORD;
   if(initial) {
     const username=process.env.INITIAL_ADMIN_USERNAME || 'admin';
