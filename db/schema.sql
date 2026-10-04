@@ -203,9 +203,12 @@ CREATE TABLE IF NOT EXISTS production_allocations (
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
-  allocation_type TEXT NOT NULL CHECK (allocation_type IN ('direct','surplus')),
+  allocation_type TEXT NOT NULL CHECK (allocation_type IN ('direct','surplus','warehouse')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE production_allocations DROP CONSTRAINT IF EXISTS production_allocations_allocation_type_check;
+ALTER TABLE production_allocations ADD CONSTRAINT production_allocations_allocation_type_check
+  CHECK (allocation_type IN ('direct','surplus','warehouse'));
 CREATE INDEX IF NOT EXISTS idx_allocations_order_product ON production_allocations(order_id,product_id);
 
 INSERT INTO products(code,length_mm) VALUES
