@@ -88,8 +88,8 @@ CREATE TABLE IF NOT EXISTS production_entries (
   order_id UUID REFERENCES orders(id) ON DELETE RESTRICT,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   rate_id UUID REFERENCES rates(id) ON DELETE RESTRICT,
-  rate_snapshot_minor BIGINT NOT NULL CHECK (rate_snapshot_minor >= 0),
-  total_minor BIGINT NOT NULL CHECK (total_minor >= 0),
+  rate_snapshot_minor BIGINT CHECK (rate_snapshot_minor >= 0),
+  total_minor BIGINT NOT NULL DEFAULT 0 CHECK (total_minor >= 0),
   note TEXT,
   created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -222,3 +222,23 @@ CREATE TABLE IF NOT EXISTS fund_entries (
 CREATE INDEX IF NOT EXISTS idx_fund_date ON fund_entries(entry_date);
 
 ALTER TABLE production_allocations ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ;
+
+
+-- Chappi Edition: production is recorded before month-end rates are known.
+ALTER TABLE production_entries ALTER COLUMN rate_snapshot_minor DROP NOT NULL;
+ALTER TABLE production_entries ALTER COLUMN total_minor SET DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS monthly_worker_earnings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  period_month DATE NOT NULL,
+  worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  work_days INTEGER NOT NULL CHECK (work_days >= 0),
+  daily_details JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(period_month, worker_id)
+);
+CREATE INDEX IF NOT EXISTS idx_monthly_worker_earnings_period ON monthly_worker_earnings(period_month);
+
+-- Existing installations may already have the old non-null columns.
+ALTER TABLE production_entries ALTER COLUMN rate_snapshot_minor DROP NOT NULL;
