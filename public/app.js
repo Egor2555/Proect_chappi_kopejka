@@ -2,7 +2,7 @@ const state={token:localStorage.getItem('chappiToken'),user:null,products:[],tea
 const $=s=>document.querySelector(s);
 function localDate(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
 const money=n=>(Number(n||0)/100).toLocaleString('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:2})+' грн';
-async function api(url,options={}){const res=await fetch('/api'+url,{...options,headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{}),...(options.headers||{})}});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||'Ошибка запроса');return data}
+async function api(url,options={}){const res=await fetch('/api'+url,{...options,headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{}),...(options.headers||{})}});const data=await res.json().catch(()=>({}));if(!res.ok){const err=new Error(data.error||'Ошибка запроса');err.status=res.status;err.code=data.code;Object.assign(err,data);throw err}return data}
 function notify(msg,kind='notice'){$('#notice').innerHTML='<div class="'+kind+'">'+escapeHtml(msg)+'</div>';setTimeout(()=>$('#notice').replaceChildren(),5000)}
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function roleName(r){return ({admin:'Администратор',brigadier:'Бригадир',worker:'Работник'})[r]||r}
