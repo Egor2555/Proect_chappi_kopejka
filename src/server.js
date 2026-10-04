@@ -65,25 +65,36 @@ async function ensureAccessProfiles() {
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_reserved_unique ON shipment_allocations(shipment_item_id,reservation_movement_id) WHERE reservation_movement_id IS NOT NULL');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_free_unique ON shipment_allocations(shipment_item_id,inventory_movement_id) WHERE reservation_movement_id IS NULL');
   const randomSecret = () => crypto.randomBytes(32).toString('hex');
+  const bootstrapPins = { admin: process.env.INITIAL_ADMIN_PIN, brigadier: process.env.INITIAL_BRIGADIER_PIN };
   for (const role of ['admin','brigadier','worker']) {
     const rows = (await pool.query('SELECT id,username FROM users WHERE role=$1 ORDER BY created_at,id',[role])).rows;
     if (!rows.length) {
+      if (role !== 'worker' && !validPin(bootstrapPins[role])) {
+        throw new Error('Для первого запуска задайте '+(role === 'admin' ? 'INITIAL_ADMIN_PIN' : 'INITIAL_BRIGADIER_PIN')+' (4–8 цифр).');
+      }
       const username = role === 'admin'
         ? (process.env.INITIAL_ADMIN_USERNAME || 'admin')
         : role === 'brigadier' ? 'brigadier' : 'workers';
       const hash = role === 'admin' && process.env.INITIAL_ADMIN_PASSWORD
         ? await bcrypt.hash(process.env.INITIAL_ADMIN_PASSWORD, 12)
         : await bcrypt.hash(randomSecret(), 12);
+      const pin = role === 'worker' ? null : encryptPin(bootstrapPins[role]);
       await pool.query('INSERT INTO users(username,password_hash,role,pin_ciphertext,pin_enabled) VALUES($1,$2,$3,$4,$5)',
-        [username, hash, role, role === 'admin' ? encryptPin('2505') : role === 'brigadier' ? encryptPin('1111') : null, role !== 'worker']);
+        [username, hash, role, pin, role !== 'worker']);
     } else if (rows.length > 1) {
       await pool.query('UPDATE users SET active=false WHERE role=$1 AND id<>$2',[role,rows[0].id]);
     }
   }
   const admin=(await pool.query("SELECT id,pin_ciphertext FROM users WHERE role='admin' AND active=true LIMIT 1")).rows[0];
-  if (admin && !admin.pin_ciphertext) await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin('2505'),admin.id]);
+  if (admin && !admin.pin_ciphertext) {
+    if (!validPin(bootstrapPins.admin)) throw new Error('Для профиля без PIN задайте INITIAL_ADMIN_PIN (4–8 цифр).');
+    await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin(bootstrapPins.admin),admin.id]);
+  }
   const brig=(await pool.query("SELECT id,pin_ciphertext FROM users WHERE role='brigadier' AND active=true LIMIT 1")).rows[0];
-  if (brig && !brig.pin_ciphertext) await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin('1111'),brig.id]);
+  if (brig && !brig.pin_ciphertext) {
+    if (!validPin(bootstrapPins.brigadier)) throw new Error('Для профиля без PIN задайте INITIAL_BRIGADIER_PIN (4–8 цифр).');
+    await pool.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true WHERE id=$2',[encryptPin(bootstrapPins.brigadier),brig.id]);
+  }
   await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS users_one_active_role_idx ON users(role) WHERE active=true");
 }
 if (!process.env.DATABASE_URL || !JWT_SECRET) {
