@@ -34,11 +34,30 @@ function validateBackup(backup) {
   };
 }
 
-function buildRestorePlan(backup, existingUserIds = []) {
+function buildUserRestoreMap(backupUsers, existingUsers) {
+  const currentByUsername = new Map(existingUsers.map(u => [String(u.username), String(u.id)]));
+  const idMap = {};
+  const missingUsernames = [];
+  for (const user of backupUsers) {
+    const currentId = currentByUsername.get(String(user.username));
+    if (!currentId) missingUsernames.push(String(user.username));
+    else idMap[String(user.id)] = currentId;
+  }
+  return {
+    idMap,
+    missingUsernames,
+    matchedUsers: backupUsers.filter(u => currentByUsername.has(String(u.username))).length
+  };
+}
+
+function buildRestorePlan(backup, existingUsers = []) {
   const summary = validateBackup(backup);
   validateBackupRelations(backup);
-  const backupUserIds = new Set(backup.tables.users.map(u => String(u.id)));
-  const missingExistingUsers = existingUserIds.filter(id => !backupUserIds.has(String(id)));
+  const userMap = buildUserRestoreMap(backup.tables.users, existingUsers);
+  const backupWorkerIds = new Set(backup.tables.workers.map(w => String(w.id)));
+  const currentUsersWithMissingWorkers = existingUsers
+    .filter(u => u.worker_id != null && !backupWorkerIds.has(String(u.worker_id)))
+    .map(u => ({ username: String(u.username), workerId: String(u.worker_id) }));
   return {
     format: summary.format,
     createdAt: summary.createdAt,
@@ -48,9 +67,13 @@ function buildRestorePlan(backup, existingUserIds = []) {
     destructive: false,
     passwordHashesRestored: false,
     usersRestored: false,
-    authMode: 'preserve-existing-users',
-    missingExistingUsers,
-    requiresExistingUsers: true
+    authMode: 'preserve-existing-users-by-username',
+    userIdMap: userMap.idMap,
+    missingBackupUsers: userMap.missingUsernames,
+    matchedUsers: userMap.matchedUsers,
+    currentUsersWithMissingWorkers,
+    requiresExistingUsers: true,
+    safeToRestore: userMap.missingUsernames.length === 0 && currentUsersWithMissingWorkers.length === 0
   };
 }
 
@@ -75,4 +98,4 @@ function validateBackupRelations(backup) {
   return true;
 }
 
-module.exports = { RESTORE_ORDER, REQUIRED_TABLES, validateBackup, validateBackupRelations, buildRestorePlan };
+module.exports = { RESTORE_ORDER, REQUIRED_TABLES, validateBackup, validateBackupRelations, buildUserRestoreMap, buildRestorePlan };
