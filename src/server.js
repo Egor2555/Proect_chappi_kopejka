@@ -504,7 +504,10 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   for(const d of dayRows.rows){ const n=attendanceCounts.get(String(d.work_date)+'|'+d.team_id)||0; if(n>0) residualMinor += BigInt(d.total_minor)%BigInt(n); }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
-        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+        FROM attendance_entries a
+        JOIN workers w ON w.id=a.worker_id
+        JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
+          AND pe.voided_at IS NULL
         WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
         ORDER BY w.display_name`,[start])).rows
     : [];
