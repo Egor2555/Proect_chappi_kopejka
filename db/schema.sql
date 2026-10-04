@@ -7,7 +7,11 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('worker','brigadier','admin')),
   worker_id UUID,
   active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  pin_ciphertext TEXT,
+  pin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  pin_failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (pin_failed_attempts >= 0),
+  pin_locked BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS teams (
@@ -242,3 +246,10 @@ CREATE INDEX IF NOT EXISTS idx_monthly_worker_earnings_period ON monthly_worker_
 
 -- Existing installations may already have the old non-null columns.
 ALTER TABLE production_entries ALTER COLUMN rate_snapshot_minor DROP NOT NULL;
+
+
+-- Chappi Edition access profile fields.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_ciphertext TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_locked BOOLEAN NOT NULL DEFAULT FALSE;
