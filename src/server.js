@@ -42,6 +42,15 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ');
+  await pool.query(`CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    code_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_admin_recovery_user_created ON admin_recovery_codes(user_id,created_at DESC)');
   await pool.query(`CREATE TABLE IF NOT EXISTS shipment_allocations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shipment_item_id UUID NOT NULL REFERENCES shipment_items(id) ON DELETE RESTRICT,
@@ -140,6 +149,66 @@ async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
 app.get('/api/health', asyncRoute(async (_req,res) => {
   await pool.query('SELECT 1');
   res.json({ ok: true, service: 'Chappi Edition' });
+}));
+
+const ADMIN_RECOVERY_EMAIL = 'eyarech999@gmail.com';
+const ADMIN_RECOVERY_TTL_MS = 6 * 60 * 60 * 1000;
+const recoveryRequestLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 3, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Слишком много запросов на восстановление. Попробуйте позже.' } });
+const recoveryVerifyLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Слишком много попыток ввода кода. Попробуйте позже.' } });
+
+app.post('/api/auth/recovery/request', recoveryRequestLimiter, asyncRoute(async (_req,res) => {
+  const admin=(await pool.query("SELECT id,pin_locked FROM users WHERE role='admin' AND active=true LIMIT 1")).rows[0];
+  if(!admin || !admin.pin_locked) return res.status(409).json({error:'Восстановление доступно только для заблокированного профиля администратора.'});
+  if(!process.env.RESEND_API_KEY || !process.env.RECOVERY_FROM_EMAIL)
+    return res.status(503).json({error:'Отправка почты ещё не настроена. Администратору нужно подключить почтовый сервис в настройках Railway.'});
+  const code=String(crypto.randomInt(0,100000000)).padStart(8,'0');
+  const codeHash=crypto.createHash('sha256').update(code).digest('hex');
+  const expiresAt=new Date(Date.now()+ADMIN_RECOVERY_TTL_MS);
+  const recovery=await tx(async c=>{
+    await c.query("UPDATE admin_recovery_codes SET used_at=COALESCE(used_at,now()) WHERE user_id=$1 AND used_at IS NULL",[admin.id]);
+    return (await c.query('INSERT INTO admin_recovery_codes(user_id,code_hash,expires_at) VALUES($1,$2,$3) RETURNING id',[admin.id,codeHash,expiresAt])).rows[0];
+  });
+  try {
+    const response=await fetch('https://api.resend.com/emails',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+process.env.RESEND_API_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        from:process.env.RECOVERY_FROM_EMAIL,
+        to:[ADMIN_RECOVERY_EMAIL],
+        subject:'Код восстановления доступа — Chappi Edition',
+        text:'Код восстановления администратора: '+code+'\n\nКод действует ровно 6 часов и может быть использован только один раз. Если вы не запрашивали восстановление, проигнорируйте это письмо.'
+      })
+    });
+    if(!response.ok) throw new Error('Email provider rejected recovery email');
+  } catch {
+    await pool.query('UPDATE admin_recovery_codes SET used_at=now() WHERE id=$1',[recovery.id]);
+    return res.status(503).json({error:'Не удалось отправить письмо. Проверьте почтовые настройки Railway.'});
+  }
+  res.json({ok:true,message:'Код отправлен на закреплённую почту. Он действует 6 часов.'});
+}));
+
+app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async (req,res) => {
+  const code=String(req.body.code||'').trim();
+  const newPin=String(req.body.newPin||'');
+  if(!/^\\d{8}$/.test(code)) return res.status(400).json({error:'Введите восьмизначный код из письма.'});
+  if(!validPin(newPin)) return res.status(400).json({error:'Новый PIN должен содержать от 4 до 8 цифр.'});
+  const codeHash=crypto.createHash('sha256').update(code).digest('hex');
+  const result=await tx(async c=>{
+    const admin=(await c.query("SELECT id,username FROM users WHERE role='admin' AND active=true FOR UPDATE")).rows[0];
+    if(!admin) throw new Error('Профиль администратора не найден.');
+    const recovery=(await c.query(`SELECT id FROM admin_recovery_codes
+      WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL AND expires_at>now()
+      ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[admin.id,codeHash])).rows[0];
+    if(!recovery) throw new Error('Код неверный, уже использован или срок его действия истёк.');
+    await c.query('UPDATE admin_recovery_codes SET used_at=now() WHERE id=$1',[recovery.id]);
+    await c.query('UPDATE users SET pin_ciphertext=$1,pin_enabled=true,pin_failed_attempts=0,pin_locked=false,last_activity_at=NULL WHERE id=$2',
+      [encryptPin(newPin),admin.id]);
+    await c.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data,reason) VALUES(NULL,'admin_access_recovery','access_profile',$1,$2,$3)",
+      [admin.id,JSON.stringify({method:'email_code',email:ADMIN_RECOVERY_EMAIL,codeTtlHours:6}),'Восстановление доступа администратора по одноразовому коду']);
+    await c.query("INSERT INTO login_log(user_id,username_attempt,success) VALUES($1,'admin-recovery',true)",[admin.id]);
+    return {username:admin.username};
+  });
+  res.json({ok:true,message:'Доступ восстановлен. Войдите через профиль «Бригадир» с новым PIN.'});
 }));
 
 app.post('/api/auth/login', asyncRoute(async (req,res) => {
