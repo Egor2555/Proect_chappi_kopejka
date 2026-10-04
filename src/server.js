@@ -31,7 +31,7 @@ function decryptPin(value) {
   decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
 }
-function validPin(pin) { return /^\\d{4,8}$/.test(String(pin)); }
+function validPin(pin) { return /^\d{4,8}$/.test(String(pin)); }
 async function recordPinFailure(user) {
   const r = await pool.query('UPDATE users SET pin_failed_attempts=pin_failed_attempts+1, pin_locked=(pin_failed_attempts+1)>=5 WHERE id=$1 RETURNING pin_failed_attempts,pin_locked',[user.id]);
   return r.rows[0];
