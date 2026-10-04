@@ -142,12 +142,41 @@ async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1
 async function shipments(){
  const rows=await api('/shipments');
  const payments=state.user.role==='admin'?await api('/payments'):[];
- $('#shipments').innerHTML='<h1>Отгрузки</h1><div class="card"><h2>История отправок</h2>'+rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.lengthMm/1000)+' м × '+i.quantity).join(', ')+'</p>').join('')+'</div>'+
- (['admin','brigadier'].includes(state.user.role)?'<div class="card"><h2>Новая отгрузка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+'</option>').join('')+'</select></label><label>Получатель<input name="recipient"></label><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="quantity" type="number" min="1" required></label><button>Зафиксировать отгрузку</button></form></div>':'')+
+ const canShip=['admin','brigadier'].includes(state.user.role);
+ const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.lengthMm/1000)+' м × '+i.quantity).join(', ')+'</p>').join('');
+ $('#shipments').innerHTML='<h1>Отгрузки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отгрузок пока нет.</p>')+'</div>'+
+ (canShip?'<div class="card"><h2>Новая отгрузка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><div class="row shipmentItem"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="quantity" type="number" min="1" required></label></div></div><button type="button" id="shipAll">Отгрузить всё по выбранному заказу</button><button type="button" id="addShipmentItem">+ Добавить позицию</button><button type="submit">Зафиксировать отгрузку</button></form></div>':'')+
  (state.user.role==='admin'?'<div class="card"><h2>Зачесть оплату по отгрузке</h2><form id="paymentForm"><label>Отгрузка<select name="shipmentId">'+rows.map(x=>'<option value="'+x.id+'">'+escapeHtml(x.shipment_number)+'</option>').join('')+'</select></label><label>Сумма, грн<input name="amount" type="number" min="0" step="0.01" required></label><label>Примечание<input name="note"></label><button>Зачесть оплату</button></form><h3>История оплат</h3>'+simpleTable(payments.map(p=>({...p,amount:money(p.amount_minor)})),[['shipment_number','Отгрузка'],['amount','Сумма'],['credited_at','Дата']])+'</div>':'');
- const f=$('#shipmentForm');if(f)f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f);try{await api('/shipments',{method:'POST',body:JSON.stringify({shipmentNumber:d.get('shipmentNumber'),orderId:d.get('orderId')||null,recipient:d.get('recipient'),items:[{productId:d.get('productId'),quantity:Number(d.get('quantity'))}]})});notify('Отгрузка записана');shipments()}catch(err){notify(err.message,'error')}});
+ const f=$('#shipmentForm');
+ if(f){
+   const itemsBox=$('#shipmentItems');
+   const addItem=()=>{
+     const row=document.createElement('div');row.className='row shipmentItem';
+     row.innerHTML='<label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="quantity" type="number" min="1" required></label><button type="button" class="removeShipmentItem">Убрать</button>';
+     row.querySelector('.removeShipmentItem').onclick=()=>row.remove();itemsBox.append(row);
+   };
+   $('#addShipmentItem').onclick=addItem;
+   $('#shipAll').onclick=()=>{
+     const orderId=f.elements.orderId.value;if(!orderId){notify('Сначала выберите заказ','error');return}
+     const order=state.orders.find(o=>o.id===orderId);if(!order){notify('Заказ не найден','error');return}
+     itemsBox.replaceChildren();
+     (order.items||[]).filter(i=>Number(i.remaining)>0).forEach(i=>{
+       const row=document.createElement('div');row.className='row shipmentItem';
+       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+i.productId+'">'+((i.lengthMm)/1000)+' м</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+i.remaining+'" value="'+i.remaining+'" required></label>';
+       itemsBox.append(row);
+     });
+     if(!itemsBox.children.length)notify('По этому заказу нечего отгружать','error');else notify('Подставлены все остатки заказа');
+   };
+   f.addEventListener('submit',async e=>{
+     e.preventDefault();const d=new FormData(f);const items=[...itemsBox.querySelectorAll('.shipmentItem')].map(row=>({productId:row.querySelector('[name="productId"]').value,quantity:Number(row.querySelector('[name="quantity"]').value)})).filter(x=>x.quantity>0);
+     if(!items.length){notify('Добавьте хотя бы одну позицию','error');return}
+     try{await api('/shipments',{method:'POST',body:JSON.stringify({shipmentNumber:d.get('shipmentNumber'),orderId:d.get('orderId')||null,recipient:d.get('recipient'),items})});notify('Отгрузка записана','success');shipments()}catch(err){notify(err.message,'error')}
+   });
+ }
  const pf=$('#paymentForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(pf);try{await api('/payments',{method:'POST',body:JSON.stringify({shipmentId:d.get('shipmentId'),amountMinor:Math.round(Number(d.get('amount'))*100),note:d.get('note')})});notify('Оплата зачтена');shipments()}catch(err){notify(err.message,'error')}})
 }
+
 async function people(){
  state.workers=await api('/workers');
  const canManage=state.user.role==='admin';
