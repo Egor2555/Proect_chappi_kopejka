@@ -36,6 +36,8 @@ jobs:
           PORT: 8080
           INITIAL_ADMIN_USERNAME: admin
           INITIAL_ADMIN_PASSWORD: SmokeTestAdminPassword123
+          INITIAL_ADMIN_PIN: '2505'
+          INITIAL_BRIGADIER_PIN: '1111'
           JWT_SECRET: ci-only-secret-that-is-long-and-random-enough
         run: |
           node src/server.js > /tmp/chappi-server.log 2>&1 &
