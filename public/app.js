@@ -88,7 +88,7 @@ async function people(){
        api('/attendance?date='+encodeURIComponent(date))
      ]);
      const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
-     box.innerHTML=members.filter(w=>w.active).map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+'</label>').join('') || '<p class="empty">На эту дату в бригаде нет активных работников.</p>';
+     box.innerHTML=members.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('') || '<p class="empty">На эту дату в бригаде нет работников.</p>';
    }catch(err){box.innerHTML='<p class="error">'+escapeHtml(err.message)+'</p>';}
  };
  if(af){
