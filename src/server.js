@@ -395,6 +395,10 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Закрытый месяц нельзя исправлять обычной операцией');
     const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id])).rows.map(x=>x.order_id);
     const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[entry.id])).rows;
+    // Serialize production reversal against concurrent shipments/other stock changes.
+    const movementProductIds=[...new Set(movements.map(m=>String(m.product_id)))];
+    if(movementProductIds.length)
+      await c.query('SELECT id FROM products WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',[movementProductIds]);
     for(const movement of movements) {
       const reverse=-Number(movement.quantity_delta);
       const current=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[movement.product_id])).rows[0].qty);
