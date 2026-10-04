@@ -5,6 +5,45 @@ function calculateTotalMinor(unitMinor, quantity) {
   return (unit * qty).toString();
 }
 
+function calculateMonthlyWorkerEarnings(days) {
+  if (!Array.isArray(days)) throw new TypeError('Days must be an array');
+  const totals = new Map();
+  const details = new Map();
+  let residualMinor = 0n;
+
+  for (const day of days) {
+    const totalMinor = BigInt(day.totalMinor);
+    const workers = Array.isArray(day.workerIds) ? day.workerIds : [];
+    if (totalMinor < 0n) throw new RangeError('Day total cannot be negative');
+    if (!workers.length) throw new RangeError('Each production day must have at least one worker');
+
+    const share = totalMinor / BigInt(workers.length);
+    residualMinor += totalMinor % BigInt(workers.length);
+
+    for (const workerId of workers) {
+      totals.set(workerId, (totals.get(workerId) || 0n) + share);
+      if (!details.has(workerId)) details.set(workerId, []);
+      details.get(workerId).push({
+        date: String(day.date),
+        teamId: day.teamId,
+        dayTotalMinor: totalMinor.toString(),
+        workers: workers.length,
+        shareMinor: share.toString()
+      });
+    }
+  }
+
+  return {
+    earnings: [...totals.entries()].map(([workerId, amountMinor]) => ({
+      workerId,
+      amountMinor: amountMinor.toString(),
+      workDays: details.get(workerId).length,
+      dailyDetails: details.get(workerId)
+    })),
+    residualMinor: residualMinor.toString()
+  };
+}
+
 function allocateProduction(quantity, directNeed, queuedOrders) {
   if (!Number.isSafeInteger(quantity) || quantity < 0) throw new RangeError('Invalid production quantity');
   let remaining = quantity;
@@ -28,4 +67,4 @@ function allocateProduction(quantity, directNeed, queuedOrders) {
   return { allocations, freeStock: remaining };
 }
 
-module.exports = { calculateTotalMinor, allocateProduction };
+module.exports = { calculateTotalMinor, calculateMonthlyWorkerEarnings, allocateProduction };
