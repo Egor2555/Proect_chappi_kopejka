@@ -28,6 +28,7 @@ function orderCards(rows,editable=false){
    return '<div class="card '+(o.priority>0?'priority':'')+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
      ((o.items||[]).map(i=>'<p>'+((i.lengthMm||i.length_mm)/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
+     (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
      (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
      (state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+
      '</div>';
@@ -123,6 +124,17 @@ async function orders(){state.orders=await api('/orders');$('#orders').innerHTML
      orders();
    }catch(err){notify(err.message,'error')}
  }));
+ document.querySelectorAll('.activateOrder').forEach(b=>b.onclick=async()=>{
+   try{await api('/orders/'+b.dataset.id+'/activate',{method:'POST',body:JSON.stringify({force:false})});notify('Заказ стал активным','success');await loadBase();orders()}
+   catch(err){
+     if(err.code==='ACTIVE_ORDER_UNFINISHED'||err.status===409){
+       const current=err.currentOrder||{};const text='Текущий активный заказ '+(current.orderNumber||'')+' ещё не завершён. Остаток: '+(current.remaining||0)+'. Переключить его в очередь и сделать выбранный заказ активным?';
+       if(!confirm(text))return;
+       try{await api('/orders/'+b.dataset.id+'/activate',{method:'POST',body:JSON.stringify({force:true})});notify('Активный заказ переключён','success');await loadBase();orders()}
+       catch(e){notify(e.message,'error')}
+     }else notify(err.message,'error')
+   }
+ });
  document.querySelectorAll('.priorityForm').forEach(pf=>pf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/orders/'+pf.dataset.id+'/priority',{method:'PATCH',body:JSON.stringify({priority:Number(new FormData(pf).get('priority'))})});notify('Приоритет изменён');orders()}catch(err){notify(err.message,'error')}}));
  document.querySelectorAll('.archiveOrder').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести завершённый заказ в архив? История останется.'))return;try{await api('/orders/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Заказ архивирован');orders()}catch(err){notify(err.message,'error')}})
 }
