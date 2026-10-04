@@ -599,7 +599,7 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       const batches=(await c.query(`SELECT m.id,m.production_entry_id,
           (m.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0))::int AS available
         FROM inventory_movements m
-        WHERE m.product_id=$1 AND m.movement_type='production_in' AND m.quantity_delta>0
+        WHERE m.product_id=$1 AND m.movement_type IN ('production_in','surplus_transfer') AND m.quantity_delta>0
         ORDER BY m.created_at,m.id
         FOR UPDATE`,[item.productId])).rows;
       let left=qty;
@@ -610,6 +610,7 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
         await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',[shipmentItem.id,batch.id,take]);
         left-=take;
       }
+      if(left>0) throw new Error('Часть складского остатка не имеет производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
         VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,[item.productId,-qty,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
     }
