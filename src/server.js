@@ -169,7 +169,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
 
 app.get('/api/attendance', auth, asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const r=await pool.query(`SELECT a.worker_id,w.display_name,a.team_id,t.name team_name
     FROM attendance_entries a JOIN workers w ON w.id=a.worker_id JOIN teams t ON t.id=a.team_id
     WHERE a.work_date=$1 ORDER BY t.name,w.display_name`,[date]);
@@ -334,7 +334,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
 
 app.get('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const params=[date];
   let teamFilter='';
   if(req.user.role==='brigadier') { params.push(req.user.workerId); teamFilter=' AND e.team_id IN (SELECT team_id FROM team_memberships WHERE worker_id=$2 AND valid_from<=$1 AND (valid_to IS NULL OR valid_to>=$1))'; }
@@ -441,7 +441,7 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const month=String(req.query.month||'');
-  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
+  if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
   const start=month+'-01';
   const r=await pool.query(`SELECT p.id,p.length_mm,COUNT(e.id)::int entries,
     COALESCE(SUM(e.quantity),0)::int quantity,COALESCE(SUM(e.total_minor),0)::text total_minor
@@ -454,7 +454,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
   const month=String(req.body.month||'');
-  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
+  if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц YYYY-MM'});
   const start=month+'-01';
   const report=await pool.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
     COALESCE(SUM(e.total_minor),0)::text total_minor FROM products p
