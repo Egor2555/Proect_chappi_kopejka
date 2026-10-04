@@ -418,8 +418,11 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
       if(!Number.isInteger(Number(item.requiredQty))||Number(item.requiredQty)<=0) throw new Error('Количество в заказе должно быть положительным целым числом');
       await c.query('INSERT INTO order_items(order_id,product_id,required_qty) VALUES($1,$2,$3)',[o.id,item.productId,Number(item.requiredQty)]);
     }
-    await audit(c,req.user.sub,'create','order',o.id,null,o);
-    return o;
+    const hasActive=(await c.query("SELECT 1 FROM orders WHERE status='active' LIMIT 1")).rowCount>0;
+    if(!hasActive) await c.query("UPDATE orders SET status='active' WHERE id=$1",[o.id]);
+    const created=(await c.query('SELECT * FROM orders WHERE id=$1',[o.id])).rows[0];
+    await audit(c,req.user.sub,'create','order',o.id,null,created);
+    return created;
   });
   res.status(201).json(order);
 }));
@@ -637,6 +640,28 @@ app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
     FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
     GROUP BY s.id ORDER BY s.shipped_at DESC LIMIT 200`);
   res.json(r.rows);
+}));
+
+app.post('/api/orders/:id/activate', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const force=Boolean(req.body?.force);
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
+    const target=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
+    if(!target) throw new Error('Заказ не найден');
+    if(['completed','cancelled','archived'].includes(target.status)) throw new Error('Завершённый или архивный заказ нельзя сделать активным');
+    const current=(await c.query("SELECT * FROM orders WHERE status='active' AND id<>$1 FOR UPDATE",[target.id])).rows[0];
+    if(current){
+      const missing=(await c.query('SELECT COALESCE(SUM(GREATEST(i.required_qty-COALESCE(d.done,0),0)),0)::int qty FROM order_items i LEFT JOIN LATERAL (SELECT SUM(a.quantity)::int done FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL) d ON true WHERE i.order_id=$1',[current.id])).rows[0].qty;
+      if(Number(missing)>0 && !force)
+        return {warning:true,currentOrder:{id:current.id,orderNumber:current.order_number,title:current.title,remaining:Number(missing)}};
+      await c.query("UPDATE orders SET status='queued' WHERE id=$1",[current.id]);
+    }
+    const activated=(await c.query("UPDATE orders SET status='active' WHERE id=$1 RETURNING *",[target.id])).rows[0];
+    await audit(c,req.user.sub,'activate','order',target.id,current||null,activated);
+    return {warning:false,order:activated};
+  });
+  if(result.warning) return res.status(409).json({code:'ACTIVE_ORDER_UNFINISHED',error:'Текущий активный заказ ещё не завершён',...result});
+  res.json(result.order);
 }));
 
 app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (req,res) => {
