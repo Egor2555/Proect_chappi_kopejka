@@ -8,7 +8,7 @@ function roleName(r){return ({admin:'Администратор',brigadier:'Бр
 function showTab(tab){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==tab);document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b){showTab(b.dataset.tab);renderTab(b.dataset.tab).catch(err=>notify(err.message,'error'))}});
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({username:f.get('username'),password:f.get('password')})});state.token=d.token;localStorage.setItem('chappiToken',d.token);await boot()}catch(err){$('#loginError').textContent=err.message}});
-async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=state.user.username+' · '+roleName(state.user.role);document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
+async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=state.user.username+' · '+roleName(state.user.role);document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=state.user.role==='worker');await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamOptions(){return state.teams.map(t=>'<option value="'+t.id+'">'+escapeHtml(t.name)+'</option>').join('')}
@@ -33,6 +33,18 @@ function production(){
   }catch(err){notify('Сохранено позиций: '+saved+'. Ошибка: '+err.message,'error')}
   finally{button.disabled=false}
  });
+ $('#productionForm [name="workDate"]').addEventListener('change',loadProductionHistory);
+ await loadProductionHistory();
+}
+async function loadProductionHistory(){
+ const view=$('#production');
+ if(!['admin','brigadier'].includes(state.user.role))return;
+ const date=view.querySelector('[name="workDate"]').value;
+ const rows=await api('/production?date='+encodeURIComponent(date));
+ let box=view.querySelector('#productionHistory');
+ if(!box){box=document.createElement('div');box.id='productionHistory';box.className='card';view.append(box)}
+ box.innerHTML='<h2>Записи за выбранный день</h2>'+rows.map(r=>'<div class="row"><div><strong>'+(r.length_mm/1000)+' м</strong> · '+r.quantity+' шт.<br><small>'+escapeHtml(r.team_name)+' · '+escapeHtml(r.order_number||'Без заказа')+' · '+escapeHtml(r.created_by_name)+'</small></div>'+(state.user.role==='admin'?'<button class="voidProduction" data-id="'+r.id+'">Исправить запись</button>':'')+'</div>').join('')+(rows.length?'':'<p class="empty">За этот день записей пока нет</p>');
+ box.querySelectorAll('.voidProduction').forEach(b=>b.onclick=async()=>{const reason=prompt('Укажи причину отмены записи. После отмены введи правильное количество заново.');if(!reason)return;try{await api('/production/'+b.dataset.id+'/void',{method:'POST',body:JSON.stringify({reason})});notify('Запись отменена. Введи корректное производство заново.');await loadProductionHistory()}catch(err){notify(err.message,'error')}})
 }
 async function orders(){state.orders=await api('/orders');$('#orders').innerHTML='<h1>Заказы</h1>'+orderCards(state.orders,true)+(state.user.role==='admin'?'<div class="card"><h2>Новый заказ</h2><form id="orderForm"><label>Номер заказа<input name="orderNumber" required></label><label>Название<input name="title" required></label><label>Приоритет (0 — обычный)<input name="priority" type="number" min="0" value="0"></label><div id="orderItems"><div class="row"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label></div></div><button type="button" id="addOrderItem">Добавить типоразмер</button><button type="submit">Создать заказ</button></form></div>':'');const form=$('#orderForm');if(form){
  $('#addOrderItem').onclick=()=>{const row=document.createElement('div');row.className='row orderItem';row.innerHTML='<label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label><button type="button" class="removeOrderItem">Убрать</button>';row.querySelector('.removeOrderItem').onclick=()=>row.remove();$('#orderItems').append(row)};
