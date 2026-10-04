@@ -51,6 +51,10 @@ async function ensureAccessProfiles() {
     UNIQUE(shipment_item_id, inventory_movement_id)
   )`);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_shipment_allocations_inventory ON shipment_allocations(inventory_movement_id)');
+  await pool.query('ALTER TABLE shipment_allocations ADD COLUMN IF NOT EXISTS reservation_movement_id UUID REFERENCES inventory_movements(id) ON DELETE RESTRICT');
+  await pool.query('ALTER TABLE shipment_allocations DROP CONSTRAINT IF EXISTS shipment_allocations_shipment_item_id_inventory_movement_id_key');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_reserved_unique ON shipment_allocations(shipment_item_id,reservation_movement_id) WHERE reservation_movement_id IS NOT NULL');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_shipment_allocations_free_unique ON shipment_allocations(shipment_item_id,inventory_movement_id) WHERE reservation_movement_id IS NULL');
   const randomSecret = () => crypto.randomBytes(32).toString('hex');
   for (const role of ['admin','brigadier','worker']) {
     const rows = (await pool.query('SELECT id,username FROM users WHERE role=$1 ORDER BY created_at,id',[role])).rows;
@@ -448,7 +452,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
     // Already shipped units remain historical facts; only the unshipped remainder is cancelled.
     const reservations=(await c.query(`SELECT r.id,r.reference_id,r.quantity_delta,
         (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa
-          WHERE sa.inventory_movement_id=r.reference_id),0))::int AS free_reserved
+          WHERE sa.reservation_movement_id=r.id),0))::int AS free_reserved
       FROM inventory_movements r
       WHERE r.order_id=$1 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
       FOR UPDATE`,[orderId])).rows;
@@ -653,7 +657,7 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
       if(take<=0) continue;
       const batches=(await c.query(`SELECT m.id,m.production_entry_id,
           (m.quantity_delta
-           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0)
+           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
            -COALESCE((SELECT SUM(r.quantity_delta) * -1 FROM inventory_movements r
              WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
         FROM inventory_movements m
@@ -778,7 +782,7 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
         const reserved=(await c.query(`SELECT r.id,r.reference_id,r.production_entry_id,
             (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity)
               FROM shipment_allocations sa
-              WHERE sa.inventory_movement_id=r.reference_id),0))::int AS available
+              WHERE sa.reservation_movement_id=r.id),0))::int AS available
           FROM inventory_movements r
           WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out'
             AND r.reference_id IS NOT NULL
@@ -788,8 +792,8 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
           const available=Math.max(0,Number(reservation.available));
           if(!available) continue;
           const take=Math.min(left,available);
-          await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
-            [shipmentItem.id,reservation.reference_id,take]);
+          await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity,reservation_movement_id) VALUES($1,$2,$3,$4)',
+            [shipmentItem.id,reservation.reference_id,take,reservation.id]);
           left-=take;
         }
       }
@@ -799,7 +803,7 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       if(left>0){
         const batches=(await c.query(`SELECT m.id,m.production_entry_id,
             (m.quantity_delta
-             -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id),0)
+             -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
              -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r
                WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
           FROM inventory_movements m
