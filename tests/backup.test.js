@@ -97,6 +97,7 @@ test('restore plan blocks when a backup account is missing locally', () => {
 
 test('restore plan blocks when a preserved user points to a worker absent from backup', () => {
   const backup = validBackup();
+  backup.tables.workers.push({id:'w1'});
   backup.tables.users.push({id:'u1',username:'admin',role:'admin',worker_id:'w1'});
   const plan = buildRestorePlan(backup,[{id:'current',username:'admin',worker_id:'missing-worker'}]);
   assert.equal(plan.currentUsersWithMissingWorkers.length,1);
