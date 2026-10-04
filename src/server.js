@@ -330,6 +330,11 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
   res.status(201).json(shipment);
 }));
 
+app.get('/api/payments', auth, roles('admin'), asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT p.*,s.shipment_number FROM payment_entries p JOIN shipments s ON s.id=p.shipment_id ORDER BY p.credited_at DESC`);
+  res.json(r.rows);
+}));
+
 app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {shipmentId,amountMinor,note=''}=req.body;
   if(!shipmentId||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0) return res.status(400).json({error:'Проверьте отгрузку и сумму'});
