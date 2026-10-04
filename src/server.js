@@ -524,6 +524,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:share.toString()});
       }
       residualMinor += remainder;
+    }
     for(const [workerId,amount] of workerTotals){
       const days=workerDetails.get(workerId).filter(x=>x.shareMinor).length;
       await c.query(`INSERT INTO monthly_worker_earnings(period_month,worker_id,amount_minor,work_days,daily_details)
