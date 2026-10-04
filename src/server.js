@@ -1073,6 +1073,11 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     for(const table of tables) for(const row of backup.tables[table]) await insertBackupRow(c,table,row,userIdMap,false);
     await c.query("SELECT setval(pg_get_serial_sequence('audit_log','id'), COALESCE((SELECT MAX(id) FROM audit_log),1), (SELECT MAX(id) IS NOT NULL FROM audit_log))");
     await c.query("SELECT setval(pg_get_serial_sequence('login_log','id'), COALESCE((SELECT MAX(id) FROM login_log),1), (SELECT MAX(id) IS NOT NULL FROM login_log))");
+    // Chappi Edition has exactly one active brigade. A backup may come from
+    // an older version with several teams, so restore the history but normalize
+    // the active state back to the single-brigade rule.
+    await c.query("UPDATE teams SET active=false");
+    await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams ORDER BY created_at,id LIMIT 1)");
     await audit(c,req.user.sub,'restore_business_data','backup',null,null,{format:backup.format,createdAt:backup.createdAt,tableCounts:plan.tableCounts});
     return {restoredTables:tables.length+1,tableCounts:plan.tableCounts};
   });
