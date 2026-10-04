@@ -514,21 +514,20 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       const n=BigInt(a.worker_count);
       const share=cents/n;
       const remainder=cents%n;
+      // Integer UAH accounting cannot create a fractional kopeck. Keep the remainder
+      // for the dedicated Happy Kopeck stage instead of silently losing it.
       for(const person of a.workers){
         const wid=person.workerId;
-        const add=share;
-        workerTotals.set(wid,(workerTotals.get(wid)||0n)+add);
+        workerTotals.set(wid,(workerTotals.get(wid)||0n)+share);
         if(!workerDetails.has(wid)) workerDetails.set(wid,[]);
-        workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:add.toString()});
+        workerDetails.get(wid).push({date:String(day.work_date),teamId:day.team_id,dayTotalMinor:cents.toString(),workers:Number(a.worker_count),shareMinor:share.toString()});
       }
-      // Any indivisible kopiyka stays explicitly in the monthly remainder; it is not silently assigned.
       if(remainder>0n){
-        for(const person of a.workers) {
+        for(const person of a.workers){
           if(!workerDetails.has(person.workerId)) workerDetails.set(person.workerId,[]);
           workerDetails.get(person.workerId).push({date:String(day.work_date),remainderMinor:remainder.toString()});
         }
       }
-    }
     for(const [workerId,amount] of workerTotals){
       const days=workerDetails.get(workerId).filter(x=>x.shareMinor).length;
       await c.query(`INSERT INTO monthly_worker_earnings(period_month,worker_id,amount_minor,work_days,daily_details)
