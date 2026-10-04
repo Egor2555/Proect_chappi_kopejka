@@ -708,12 +708,16 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже закрыт');
-    const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(e.quantity),0)::int quantity,
+    const items=(await c.query(`SELECT p.id,p.length_mm,COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
-      CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(e.quantity),0)::bigint*r.amount_minor)::text END total_minor
+      CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
       FROM products p
-      LEFT JOIN production_entries e ON e.product_id=p.id AND e.work_date >= $1::date
-        AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
+      LEFT JOIN shipment_items si ON si.product_id=p.id
+      LEFT JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
+        AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      LEFT JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+      LEFT JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+      LEFT JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
       LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
       GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
     const produced=items.filter(x=>Number(x.quantity)>0);
@@ -724,11 +728,16 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
       WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
       GROUP BY a.work_date,a.team_id ORDER BY a.work_date,a.team_id`,[start])).rows;
-    const prodDays=(await c.query(`SELECT e.work_date,e.team_id,SUM(e.quantity)::int quantity,
-      SUM((e.quantity::bigint*r.amount_minor))::text total_minor
-      FROM production_entries e JOIN rates r ON r.product_id=e.product_id AND r.period_month=$1::date
-      WHERE e.work_date >= $1::date AND e.work_date < ($1::date + INTERVAL '1 month') AND e.voided_at IS NULL
-      GROUP BY e.work_date,e.team_id ORDER BY e.work_date,e.team_id`,[start])).rows;
+    const prodDays=(await c.query(`SELECT pe.work_date,pe.team_id,SUM(sa.quantity)::int quantity,
+      SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
+      FROM shipment_items si
+      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
+        AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+      JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+      JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
+      JOIN rates r ON r.product_id=si.product_id AND r.period_month=$1::date
+      GROUP BY pe.work_date,pe.team_id ORDER BY pe.work_date,pe.team_id`,[start])).rows;
     const attendanceMap=new Map(attendance.map(x=>[String(x.work_date)+'|'+x.team_id,x]));
     const calculationDays=prodDays.map(day=>{
       const a=attendanceMap.get(String(day.work_date)+'|'+day.team_id);
