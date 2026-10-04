@@ -841,11 +841,11 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     r.amount_minor::text rate_minor,
     CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
-    LEFT JOIN shipment_items si ON si.product_id=p.id
-    LEFT JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
-    LEFT JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
-    LEFT JOIN inventory_movements im ON im.id=sa.inventory_movement_id
-    LEFT JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
+    JOIN shipment_items si ON si.product_id=p.id
+    JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+    JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
+    JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+    JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
     GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
