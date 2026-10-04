@@ -190,7 +190,10 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
       const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
       const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0].qty;
       if(!requested) throw new Error('В заказе нет выбранного типоразмера');
-      const needBefore=Math.max(0,Number(requested.required_qty)-Number(done));\n      const direct=Math.min(Number(quantity),needBefore);\n      if(direct>0) await c.query(\`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'direct')\`,[p.id,orderId,productId,direct]);\n      remaining=Number(quantity)-direct;
+      const needBefore=Math.max(0,Number(requested.required_qty)-Number(done));
+      const direct=Math.min(Number(quantity),needBefore);
+      if(direct>0) await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'direct')`,[p.id,orderId,productId,direct]);
+      remaining=Number(quantity)-direct;
     }
     const assigned=Math.max(0,Number(quantity)-remaining);
     if(assigned>0) await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by)
