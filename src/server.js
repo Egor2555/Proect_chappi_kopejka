@@ -554,7 +554,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         [start,earning.workerId,earning.amountMinor,earning.workDays,JSON.stringify(earning.dailyDetails)]);
     }
     const residualMinor=BigInt(calculation.residualMinor);
-    const eligibleWorkerIds=calculation.earnings.filter(x=>BigInt(x.amountMinor)>0n).map(x=>x.workerId);
+    const eligibleWorkerIds=[...new Set(calculationDays.flatMap(day=>day.workerIds))];
     const happyKopeck=chooseHappyKopeckWinner(residualMinor,eligibleWorkerIds,happyKopeckWinnerId);
     if(residualMinor>0n){
       await c.query(`INSERT INTO penny_events(period_month,source_minor,distributed_minor,allocation,algorithm_version,created_by,status)
