@@ -928,8 +928,14 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
         JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
         WHERE pe.voided_at IS NULL ORDER BY w.display_name`,[start])).rows
     : [];
-  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,
-    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString(),winnerId:closedHappyKopeck?.winnerId||null},closed:!!closureRow});
+  const visibleItems=req.user.role==='worker'
+      ? r.rows.map(row=>({...row,rate_minor:null,total_minor:null}))
+      : r.rows;
+    const visibleTotal=req.user.role==='worker'
+      ? {quantity:totals.quantity,totalMinor:'0'}
+      : {quantity:totals.quantity,totalMinor:totals.totalMinor.toString()};
+    res.json({month,items:visibleItems,total:visibleTotal,missingRates:missing,earnings:earnings.rows,
+    eligibleHappyKopeckWorkers:[],happyKopeck:{residualMinor:'0',winnerId:null},closed:!!closureRow});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
