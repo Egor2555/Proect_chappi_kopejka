@@ -12,6 +12,14 @@
       <h1>Вход в систему</h1><p class="muted">Выберите профиль. Администратор входит через «Бригадир» своим PIN.</p>
       <form id="loginForm"><div class="profile-choice"><button type="button" data-login-profile="brigadier">Бригадир</button><button type="button" data-login-profile="worker">Работник</button></div><input type="hidden" name="profile" value="brigadier"><label id="pinLabel">PIN<input name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8"></label><button>Войти</button></form>
       <p id="loginError" class="error" role="alert"></p>
+      <button type="button" id="adminRecoveryStart" class="secondary" hidden>Восстановить доступ администратора</button>
+      <form id="adminRecoveryForm" hidden>
+        <p class="muted">Код придёт на закреплённую почту. Он действует 6 часов и используется один раз.</p>
+        <label>Код из письма<input name="code" inputmode="numeric" pattern="[0-9]*" maxlength="8" required></label>
+        <label>Новый PIN администратора<input name="newPin" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required></label>
+        <button>Подтвердить код и задать новый PIN</button>
+        <p id="recoveryError" class="error" role="alert"></p>
+      </form>
     </section>
     <section id="appView" hidden>
       <nav class="tabs" id="tabs">
