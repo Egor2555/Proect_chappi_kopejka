@@ -80,15 +80,35 @@ async function people(){
 }
 async function reports(){
  const month=new Date().toISOString().slice(0,7);
- $('#reports').innerHTML='<h1>Месячный отчёт</h1><div class="card"><form id="reportForm"><label>Месяц<input type="month" name="month" value="'+month+'" required></label><button>Показать отчёт</button></form><div id="reportResult"></div></div>';
- const form=$('#reportForm');const load=async()=>{const m=new FormData(form).get('month');const r=await api('/reports/monthly?month='+encodeURIComponent(m));$('#reportResult').innerHTML='<h2>Итого: '+r.total.quantity+' изделий · '+money(r.total.totalMinor)+'</h2>'+simpleTable(r.items.map(x=>({...x,total:money(x.total_minor)})),[['length_mm','Длина, мм'],['quantity','Количество'],['total','Заработок']])+(state.user.role==='admin'?'<button id="closeMonth">Закрыть месяц</button>':'');const b=$('#closeMonth');if(b)b.onclick=async()=>{if(!confirm('Закрыть месяц '+m+'? После закрытия новое производство за этот месяц будет запрещено.'))return;try{await api('/reports/close-month',{method:'POST',body:JSON.stringify({month:m})});notify('Месяц закрыт');b.disabled=true}catch(e){notify(e.message,'error')}}};form.addEventListener('submit',e=>{e.preventDefault();load().catch(err=>notify(err.message,'error'))});await load();
+ $('#reports').innerHTML='<h1>Месячный отчёт и закрытие</h1><div class="card"><form id="reportForm"><label>Месяц<input type="month" name="month" value="'+month+'" required></label><button>Показать</button></form><div id="reportResult"></div></div>';
+ const form=$('#reportForm');
+ const load=async()=>{
+   const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
+   const missing=r.missingRates||[];
+   const rows=r.items.map(x=>({...x,rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
+   let html='<h2>Производство за '+escapeHtml(m)+'</h2>'+simpleTable(rows,[['length_mm','Длина, мм'],['quantity','Количество'],['rate','Расценка'],['total','Стоимость']]);
+   html+='<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>';
+   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>(x/1000)+' м').join(', ')+'</p>';
+   if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
+   if(state.user.role==='admin') html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>';
+   $('#reportResult').innerHTML=html;
+   const b=$('#closeMonth');
+   if(b)b.onclick=async()=>{
+     if(!confirm('Закрыть месяц '+m+'? Система сначала рассчитает каждый рабочий день по введённым расценкам и разделит стоимость дня между работавшими в этот день. После закрытия месяц фиксируется.'))return;
+     try{await api('/reports/close-month',{method:'POST',body:JSON.stringify({month:m})});notify('Месяц закрыт. Начисления работников зафиксированы.','success');await load()}catch(e){notify(e.message,'error')}
+   };
+ };
+ form.addEventListener('submit',e=>{e.preventDefault();load().catch(err=>notify(err.message,'error'))});
+ await load();
 }
 async function rates(){
  const rows=await api('/rates');
- $('#rates').innerHTML='<h1>Расценки и типоразмеры</h1><div class="card"><p class="muted">Ставка задаётся по типоразмеру и месяцу. После закрытия месяца история не переписывается.</p><form id="rateForm"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Месяц<input name="periodMonth" type="month" required></label><label>Цена за штуку, грн<input name="amount" type="number" min="0" step="0.01" required></label><button>Сохранить расценку</button></form></div>'+
- (state.user.role==='admin'?'<div class="card"><h2>Добавить типоразмер</h2><form id="productForm"><label>Код<input name="code" required placeholder="Например 60x40-3200"></label><label>Длина, мм<input name="lengthMm" type="number" min="1" required></label><label>Ширина сечения, мм<input name="sectionWidthMm" type="number" min="1" value="60" required></label><label>Высота сечения, мм<input name="sectionHeightMm" type="number" min="1" value="40" required></label><button>Добавить типоразмер</button></form><h3>Справочник</h3>'+state.products.map(p=>'<p>'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+' · '+(p.active?'Активен':'Архив')+(p.active?' <button class="archiveProduct" data-id="'+p.id+'">В архив</button>':'')+'</p>').join('')+'</div>':'')+
- '<div class="card">'+simpleTable(rows,[['length_mm','Длина, мм'],['period_month','Месяц'],['amount_minor','Цена, коп.']])+'</div>';
- $('#rateForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/rates',{method:'POST',body:JSON.stringify({productId:f.get('productId'),periodMonth:f.get('periodMonth')+'-01',amountMinor:Math.round(Number(f.get('amount'))*100)})});notify('Расценка сохранена');rates()}catch(err){notify(err.message,'error')}});
+ const canEdit=state.user.role==='admin';
+ $('#rates').innerHTML='<h1>Расценки</h1><div class="card"><p class="muted">Расценки видят все. В течение месяца они не требуются для ввода производства. Администратор в конце месяца вводит фактическую цену каждого произведённого типоразмера.</p>'+
+ (canEdit?'<h2>Внести или изменить расценку</h2><form id="rateForm"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Месяц<input name="periodMonth" type="month" required></label><label>Цена за штуку, грн<input name="amount" type="number" min="0" step="0.01" required></label><button>Сохранить расценку</button></form>':'<p class="muted">Ввод и изменение расценок доступен только администратору.</p>')+'</div>'+
+ (canEdit?'<div class="card"><h2>Справочник типоразмеров</h2>'+state.products.map(p=>'<p>'+(p.length_mm/1000)+' м · '+p.section_width_mm+'×'+p.section_height_mm+' · '+(p.active?'Активен':'Архив')+(p.active?' <button class="archiveProduct" data-id="'+p.id+'">В архив</button>':'')+'</p>').join('')+'<form id="productForm"><h3>Добавить типоразмер</h3><label>Код<input name="code" required placeholder="Например 60x40-3200"></label><label>Длина, мм<input name="lengthMm" type="number" min="1" required></label><label>Ширина сечения, мм<input name="sectionWidthMm" type="number" min="1" value="60" required></label><label>Высота сечения, мм<input name="sectionHeightMm" type="number" min="1" value="40" required></label><button>Добавить типоразмер</button></form></div>':'')+
+ '<div class="card"><h2>История расценок</h2>'+simpleTable(rows.map(x=>({...x,period:String(x.period_month).slice(0,7),amount:money(x.amount_minor)})),[['length_mm','Длина, мм'],['period','Месяц'],['amount','Цена, грн']])+'</div>';
+ const rf=$('#rateForm');if(rf)rf.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/rates',{method:'POST',body:JSON.stringify({productId:f.get('productId'),periodMonth:f.get('periodMonth')+'-01',amountMinor:Math.round(Number(f.get('amount'))*100)})});notify('Расценка сохранена');rates()}catch(err){notify(err.message,'error')}});
  const pf=$('#productForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(pf));try{await api('/products',{method:'POST',body:JSON.stringify(d)});notify('Типоразмер добавлен');await loadBase();rates()}catch(err){notify(err.message,'error')}});
  document.querySelectorAll('.archiveProduct').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести типоразмер в архив? История останется доступной.'))return;try{await api('/products/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Типоразмер архивирован');await loadBase();rates()}catch(err){notify(err.message,'error')}})
 }
