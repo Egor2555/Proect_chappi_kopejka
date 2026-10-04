@@ -619,7 +619,7 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const month=String(req.query.month||'');
-  if(!/^\\d{4}-\\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
+  if(!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({error:'Укажите месяц в формате YYYY-MM'});
   const currentMonthKyiv=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date());
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
