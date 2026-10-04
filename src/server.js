@@ -78,7 +78,7 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
     pool.query(`SELECT o.id,o.order_number,o.title,o.priority,o.status,o.created_at,
       COALESCE(json_agg(json_build_object('length_mm',p.length_mm,'required',i.required_qty,
         'done',COALESCE(done.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(done.qty,0),0))
-      ) ORDER BY p.length_mm) AS items
+        ORDER BY p.length_mm),'[]'::json) AS items
       FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
       LEFT JOIN LATERAL (SELECT SUM(a.quantity)::int qty FROM production_allocations a
         WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL) done ON true
