@@ -169,6 +169,11 @@ app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (
     if(!allowed.rowCount) return res.status(403).json({error:'Можно отмечать только свою бригаду'});
   }
   const created=await tx(async c=>{
+    for(const workerId of workerIds){
+      const member=await c.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
+        [workerId,teamId,workDate]);
+      if(!member.rowCount) throw new Error('Работник не состоит в выбранной бригаде на эту дату');
+    }
     const before=(await c.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId])).rows;
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
     const rows=[];
