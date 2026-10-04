@@ -90,7 +90,7 @@ async function reports(){
    html+='<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>';
    if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>(x/1000)+' м').join(', ')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
-   if(state.user.role==='admin') { const eligible=r.eligibleHappyKopeckWorkers||[]; const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; html+=pending?'<label>Победитель «Счастливой копейки»<select id="happyKopeckWinner">'+eligible.map(x=>'<option value="'+escapeHtml(x.worker_id)+'">'+escapeHtml(x.display_name)+'</option>').join('')+'</select></label>':''; html+='<button id="closeMonth" '+(missing.length||(pending&&!eligible.length)?'disabled':'')+'>Закрыть месяц</button>'; }
+   if(state.user.role==='admin') { const eligible=r.eligibleHappyKopeckWorkers||[]; const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' «Счастливая копейка» назначена победителю.':'')+'</p>'; else { html+=pending?'<label>Победитель «Счастливой копейки»<select id="happyKopeckWinner">'+eligible.map(x=>'<option value="'+escapeHtml(x.worker_id)+'">'+escapeHtml(x.display_name)+'</option>').join('')+'</select></label>':''; html+='<button id="closeMonth" '+(missing.length||(pending&&!eligible.length)?'disabled':'')+'>Закрыть месяц</button>'; } }
    $('#reportResult').innerHTML=html;
    const b=$('#closeMonth');
    if(b)b.onclick=async()=>{
