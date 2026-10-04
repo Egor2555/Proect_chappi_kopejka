@@ -502,7 +502,14 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const attendanceCounts=new Map(dayAttendance.rows.map(x=>[String(x.work_date)+'|'+x.team_id,Number(x.worker_count)]));
   let residualMinor=0n;
   for(const d of dayRows.rows){ const n=attendanceCounts.get(String(d.work_date)+'|'+d.team_id)||0; if(n>0) residualMinor += BigInt(d.total_minor)%BigInt(n); }
-  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,happyKopeck:{residualMinor:residualMinor.toString()}});
+  const eligibleHappyKopeckWorkers=req.user.role==='admin'
+    ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
+        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+        WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
+        ORDER BY w.display_name`,[start])).rows
+    : [];
+  res.json({month,items:r.rows,total:{quantity:totals.quantity,totalMinor:totals.totalMinor.toString()},missingRates:missing,earnings:earnings.rows,
+    eligibleHappyKopeckWorkers,happyKopeck:{residualMinor:residualMinor.toString()}});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
