@@ -519,7 +519,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
         COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=o.id AND a.product_id=i.product_id),0) done
         FROM orders o JOIN order_items i ON i.order_id=o.id
         WHERE o.id<>COALESCE($1::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
-          AND o.status IN ('queued','active') AND i.product_id=$2
+          AND o.status='queued' AND i.product_id=$2
         ORDER BY o.priority DESC,o.created_at ASC FOR UPDATE OF o`,[orderId,productId])).rows;
       for(const candidate of candidates){
         const need=Math.max(0,Number(candidate.required_qty)-Number(candidate.done));
