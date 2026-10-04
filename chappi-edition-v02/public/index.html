@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chappi Edition</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <h1>CHAPPI EDITION</h1>
+        <div class="subtitle">Учёт столбов</div>
+      </div>
+      <div id="sessionInfo"></div>
+    </header>
+
+    <main>
+      <section id="loginScreen" class="screen">
+        <div class="card login-card">
+          <h2>Вход</h2>
+
+          <div class="login-buttons">
+            <button class="big-button" onclick="showWorkerLogin()">
+              👷 Работник
+            </button>
+
+            <button class="big-button" onclick="showBrigadierLogin()">
+              🧭 Бригадир
+            </button>
+
+            <button class="big-button" onclick="showAdminLogin()">
+              🔐 Администратор
+            </button>
+          </div>
+
+          <div id="loginForm"></div>
+        </div>
+      </section>
+
+      <section id="mainScreen" class="screen hidden">
+        <nav class="menu">
+          <button onclick="showPage('dashboard')">📊 Главная</button>
+          <button onclick="showPage('production')">🏗 Производство</button>
+          <button onclick="showPage('attendance')">👥 Присутствие</button>
+          <button onclick="showPage('report')">📋 Отчёт</button>
+          <button id="adminMenu" class="hidden" onclick="showPage('admin')">
+            ⚙️ Админ
+          </button>
+          <button onclick="logout()">🚪 Выход</button>
+        </nav>
+
+        <div id="page"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
