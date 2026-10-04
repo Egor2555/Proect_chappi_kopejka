@@ -20,12 +20,13 @@ async function renderTab(tab){if(tab==='home')return home();if(tab==='production
 async function home(){const d=await api('/dashboard');$('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(d.today,[['length_mm','Длина, мм'],['quantity','Количество']])+'</div>'}
 function orderCards(rows,editable=false){
  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
- return rows.map(o=>{
+ return rows.map((o,index)=>{
+   const orderHighlight=o.status==='active'?'order-active':(o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued')?'order-next':'');
    const warehouseForm=(['admin','brigadier'].includes(state.user.role)&&['queued','active'].includes(o.status))
     ? '<form class="warehouseAssignForm card" data-id="'+o.id+'"><strong>Выдать со склада в заказ</strong><div class="row"><label>Типоразмер<select name="productId">'+
       (o.items||[]).map(i=>'<option value="'+(i.productId||i.product_id)+'">'+((i.lengthMm||i.length_mm)/1000)+' м · '+i.remaining+' шт. осталось</option>').join('')+
       '</select></label><label>Количество<input name="quantity" type="number" min="1" step="1" required></label><button>Выдать со склада</button></div></form>' : '';
-   return '<div class="card '+(o.priority>0?'priority':'')+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
+   return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
      ((o.items||[]).map(i=>'<p>'+((i.lengthMm||i.length_mm)/1000)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
      (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
