@@ -71,33 +71,26 @@ async function people(){
  state.workers=await api('/workers');
  const canManage=state.user.role==='admin';
  const canAttendance=['admin','brigadier'].includes(state.user.role);
- $('#people').innerHTML='<h1>Работники и присутствие</h1><div class="card">'+simpleTable(state.workers,[['display_name','Имя'],['team_name','Бригада'],['active','Активен']])+'</div>'+
- (canManage?'<div class="card"><h2>Архивировать работника</h2>'+state.workers.filter(w=>w.active).map(w=>'<p>'+escapeHtml(w.display_name)+' <button class="archiveWorker" data-id="'+w.id+'">В архив</button></p>').join('')+'</div>':'')+
- (canManage?'<div class="card"><h2>Добавить работника</h2><form id="workerForm"><label>Имя<input name="displayName" required></label><button>Добавить</button></form></div><div class="card"><h2>Состав единственной бригады</h2><p class="muted">'+escapeHtml(teamName())+'. Только администратор меняет состав.</p><form id="membershipForm"><label>Добавить работника<select name="workerId">'+state.workers.filter(w=>w.active).map(w=>'<option value="'+w.id+'">'+escapeHtml(w.display_name)+'</option>').join('')+'</select></label><label>Дата начала<input name="validFrom" type="date" required value="'+localDate()+'"></label><button>Добавить в бригаду</button></form></div>':'')+
+ const members=await api('/team-members?date='+encodeURIComponent(localDate()));
+ $('#people').innerHTML='<h1>Работники и присутствие</h1><div class="card"><p><strong>Единственная бригада:</strong> '+escapeHtml(teamName())+'</p>'+simpleTable(state.workers,[['display_name','Имя'],['active','Активен']])+'</div>'+
+ (canManage?'<div class="card"><h2>Состав бригады</h2><p class="muted">Только администратор добавляет и убирает людей. Удаление из бригады не стирает историю.</p><h3>Сейчас в бригаде</h3>'+members.map(w=>'<p>'+escapeHtml(w.display_name)+' <button class="removeMember" data-id="'+w.id+'">Убрать из бригады</button></p>').join('')+'<form id="membershipForm"><label>Добавить работника<select name="workerId">'+state.workers.filter(w=>w.active&&!members.some(m=>m.id===w.id)).map(w=>'<option value="'+w.id+'">'+escapeHtml(w.display_name)+'</option>').join('')+'</select></label><label>Дата начала<input name="validFrom" type="date" required value="'+localDate()+'"></label><button>Добавить в бригаду</button></form></div>':'')+
+ (canManage?'<div class="card"><h2>Добавить работника в систему</h2><form id="workerForm"><label>Имя<input name="displayName" required></label><button>Добавить</button></form></div>':'')+
  (canAttendance?'<div class="card"><h2>Кто сегодня работал</h2><form id="attendanceForm"><label>Дата<input type="date" name="workDate" required value="'+localDate()+'"></label><p><strong>Бригада:</strong> '+escapeHtml(teamName())+'</p><div id="attendanceChecklist" class="checklist"><p class="muted">Загрузка состава бригады…</p></div><button>Сохранить присутствие</button></form><p class="muted">Отмечаются только те, кто работал. Причины отсутствия не записываются.</p></div>':'');
- document.querySelectorAll('.archiveWorker').forEach(b=>b.onclick=async()=>{if(!confirm('Архивировать работника? История производства и присутствия сохранится.'))return;try{await api('/workers/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Работник архивирован');await loadBase();people()}catch(err){notify(err.message,'error')}});
+ document.querySelectorAll('.removeMember').forEach(b=>b.onclick=async()=>{if(!confirm('Убрать работника из бригады? История сохранится.'))return;try{await api('/team-memberships/'+b.dataset.id,{method:['D','E','L','E','T','E'].join(''),body:JSON.stringify({validTo:localDate()})});notify('Работник убран из бригады');people()}catch(err){notify(err.message,'error')}});
  const wf=$('#workerForm');if(wf)wf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/workers',{method:'POST',body:JSON.stringify({displayName:new FormData(wf).get('displayName')})});notify('Работник добавлен');people()}catch(err){notify(err.message,'error')}});
- const mf=$('#membershipForm');if(mf)mf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(mf));try{await api('/team-memberships',{method:'POST',body:JSON.stringify(d)});notify('Работник назначен в бригаду');await loadBase();people()}catch(err){notify(err.message,'error')}});
+ const mf=$('#membershipForm');if(mf)mf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(mf));try{await api('/team-memberships',{method:'POST',body:JSON.stringify(d)});notify('Работник добавлен в бригаду');people()}catch(err){notify(err.message,'error')}});
  const af=$('#attendanceForm');
  const loadAttendancePeople=async()=>{
    if(!af)return;
    const date=af.elements.workDate.value,teamId=singleTeamId(),box=$('#attendanceChecklist');
    if(!date||!teamId)return;
    try{
-     const [members,attendance]=await Promise.all([
-       api('/team-members?date='+encodeURIComponent(date)),
-       api('/attendance?date='+encodeURIComponent(date))
-     ]);
+     const [membersForDate,attendance]=await Promise.all([api('/team-members?date='+encodeURIComponent(date)),api('/attendance?date='+encodeURIComponent(date))]);
      const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
-     box.innerHTML=members.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('') || '<p class="empty">На эту дату в бригаде нет работников.</p>';
+     box.innerHTML=membersForDate.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('') || '<p class="empty">На эту дату в бригаде нет работников.</p>';
    }catch(err){box.innerHTML='<p class="error">'+escapeHtml(err.message)+'</p>';}
  };
- if(af){
-   af.elements.workDate.addEventListener('change',loadAttendancePeople);
-   
-   loadAttendancePeople();
-   af.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(af);try{await api('/attendance',{method:'POST',body:JSON.stringify({workDate:fd.get('workDate'),teamId:fd.get('teamId'),workerIds:fd.getAll('workerIds')})});notify('Присутствие сохранено');await loadAttendancePeople()}catch(err){notify(err.message,'error')}});
- }
+ if(af){af.elements.workDate.addEventListener('change',loadAttendancePeople);loadAttendancePeople();af.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(af);try{await api('/attendance',{method:'POST',body:JSON.stringify({workDate:fd.get('workDate'),workerIds:fd.getAll('workerIds')})});notify('Присутствие сохранено');await loadAttendancePeople()}catch(err){notify(err.message,'error')}});}
 }
 async function reports(){
  const month=localDate().slice(0,7);
