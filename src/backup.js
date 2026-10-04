@@ -85,6 +85,16 @@ function buildRestorePlan(backup, existingUsers = []) {
   const currentUsersWithMissingWorkers = existingUsers
     .filter(u => u.worker_id != null && !backupWorkerIds.has(String(u.worker_id)))
     .map(u => ({ username: String(u.username), workerId: String(u.worker_id) }));
+  const backupUsersByUsername = new Map(backup.tables.users.map(u => [String(u.username), u]));
+  const currentUsersWithWorkerMismatch = existingUsers
+    .filter(u => backupUsersByUsername.has(String(u.username)))
+    .filter(u => String(u.worker_id ?? '') !== String(backupUsersByUsername.get(String(u.username)).worker_id ?? ''))
+    .map(u => ({
+      username: String(u.username),
+      currentWorkerId: u.worker_id == null ? null : String(u.worker_id),
+      backupWorkerId: backupUsersByUsername.get(String(u.username)).worker_id == null
+        ? null : String(backupUsersByUsername.get(String(u.username)).worker_id)
+    }));
   return {
     format: summary.format,
     createdAt: summary.createdAt,
@@ -99,8 +109,9 @@ function buildRestorePlan(backup, existingUsers = []) {
     missingBackupUsers: userMap.missingUsernames,
     matchedUsers: userMap.matchedUsers,
     currentUsersWithMissingWorkers,
+    currentUsersWithWorkerMismatch,
     requiresExistingUsers: true,
-    safeToRestore: userMap.missingUsernames.length === 0 && currentUsersWithMissingWorkers.length === 0
+    safeToRestore: userMap.missingUsernames.length === 0 && currentUsersWithMissingWorkers.length === 0 && currentUsersWithWorkerMismatch.length === 0
   };
 }
 
