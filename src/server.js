@@ -291,6 +291,23 @@ app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
+app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
+  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('lengthMm',p.length_mm,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
+    FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
+    GROUP BY s.id ORDER BY s.shipped_at DESC LIMIT 200`);
+  res.json(r.rows);
+}));
+
+app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const priority=Number(req.body.priority);
+  if(!Number.isInteger(priority)||priority<0) return res.status(400).json({error:'Приоритет должен быть целым числом от 0'});
+  const r=await pool.query('UPDATE orders SET priority=$1 WHERE id=$2 RETURNING *',[priority,req.params.id]);
+  if(!r.rowCount) return res.status(404).json({error:'Заказ не найден'});
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'priority_change','order',$2,$3)",
+    [req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
+  res.json(r.rows[0]);
+}));
+
 app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
