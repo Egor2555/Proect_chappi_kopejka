@@ -38,7 +38,6 @@ async function must(path, options, expected=200) {
   const attendance=await must('/api/attendance?date='+today,{token:admin});
   assert.equal(attendance.length,1);
 
-  await must('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}},201);
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
   const orderB=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-B',title:'CI surplus order',priority:2,items:[{productId:product.id,requiredQty:1}]}},201);
 
@@ -62,6 +61,10 @@ async function must(path, options, expected=200) {
 
   const productionHistory=await must('/api/production?date='+today,{token:admin});
   assert.equal(productionHistory.length,1);
+  const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
+  assert.deepEqual(beforeRates.missingRates,[1500]);
+  assert.equal(beforeRates.total.totalMinor,'0');
+  await must('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(report.total.quantity,3);
   assert.equal(report.total.totalMinor,'375');
@@ -73,6 +76,9 @@ async function must(path, options, expected=200) {
   await must('/api/orders/'+orderA.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/orders/'+orderB.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}},201);
+  const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
+  assert.equal(closedReport.earnings.length,1);
+  assert.equal(closedReport.earnings[0].amount_minor,'375');
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
