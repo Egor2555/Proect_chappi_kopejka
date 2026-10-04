@@ -209,3 +209,14 @@ INSERT INTO products(code,length_mm) VALUES
   ('60x40-2250',2250),('60x40-2500',2500),('60x40-3000',3000)
 ON CONFLICT(code) DO NOTHING;
 INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS fund_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_date DATE NOT NULL,
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('income','expense','adjustment')),
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  note TEXT NOT NULL,
+  created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_fund_date ON fund_entries(entry_date);
