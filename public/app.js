@@ -232,8 +232,14 @@ async function reports(){
    const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
    const missing=r.missingRates||[];
    const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(Number(x.length_mm)/1000)+' м'),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
-   let html='<h2>Производство за '+escapeHtml(m)+'</h2>'+simpleTable(rows,[['size','Типоразмер'],['quantity','Количество'],['rate','Расценка'],['total','Стоимость']]);
-   html+='<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>';
+   const financeVisible=state.user.role!=='worker';
+   let html='<h2>Производство за '+escapeHtml(m)+'</h2>';
+   html+=financeVisible
+     ? simpleTable(rows,[['size','Типоразмер'],['quantity','Количество'],['rate','Расценка'],['total','Стоимость']])
+     : simpleTable(rows,[['size','Типоразмер'],['quantity','Количество']]);
+   html+=financeVisible
+     ? '<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>'
+     : '<p><strong>Всего:</strong> '+r.total.quantity+' шт.</p>';
    if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(Number(x.length_mm)/1000)+' м')).join(', ')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
    if(state.user.role==='admin') { const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>'; else { html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>'; html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>'; } }
