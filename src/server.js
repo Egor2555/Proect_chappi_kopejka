@@ -188,16 +188,16 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
     let remaining=Number(quantity);
     if(orderId){
       const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
-      const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_entries WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL',[orderId,productId])).rows[0].qty;
+      const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0].qty;
       if(!requested) throw new Error('В заказе нет выбранного типоразмера');
-      remaining=Math.max(0,done-Number(requested.required_qty));
+      const needBefore=Math.max(0,Number(requested.required_qty)-Number(done));\n      const direct=Math.min(Number(quantity),needBefore);\n      if(direct>0) await c.query(\`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'direct')\`,[p.id,orderId,productId,direct]);\n      remaining=Number(quantity)-direct;
     }
     const assigned=Math.max(0,Number(quantity)-remaining);
     if(assigned>0) await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by)
       VALUES($1,'production_in',$2,$3,$4,$5)`,[productId,assigned,p.id,orderId,req.user.sub]);
     if(remaining>0){
       const candidates=(await c.query(`SELECT o.id,i.required_qty,
-        COALESCE((SELECT SUM(e.quantity)::int FROM production_entries e WHERE e.order_id=o.id AND e.product_id=i.product_id AND e.voided_at IS NULL),0) done
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id),0) done
         FROM orders o JOIN order_items i ON i.order_id=o.id
         WHERE o.id<>COALESCE($1::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
           AND o.status IN ('queued','active') AND i.product_id=$2
@@ -216,7 +216,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
       VALUES($1,'production_in',$2,$3,$4,'Излишек на свободный склад')`,[productId,remaining,p.id,req.user.sub]);
     if(orderId){
       const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
-        COALESCE((SELECT SUM(e.quantity)::int FROM production_entries e WHERE e.order_id=i.order_id AND e.product_id=i.product_id AND e.voided_at IS NULL),0)`,[orderId])).rows[0].n;
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[orderId])).rows[0].n;
       if(missing===0) await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
       else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued'",[orderId]);
     }
