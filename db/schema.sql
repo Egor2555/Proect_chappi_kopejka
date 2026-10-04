@@ -203,3 +203,9 @@ CREATE TABLE IF NOT EXISTS production_allocations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_allocations_order_product ON production_allocations(order_id,product_id);
+
+INSERT INTO products(code,length_mm) VALUES
+  ('60x40-1500',1500),('60x40-1700',1700),('60x40-2000',2000),
+  ('60x40-2250',2250),('60x40-2500',2500),('60x40-3000',3000)
+ON CONFLICT(code) DO NOTHING;
+INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING;
