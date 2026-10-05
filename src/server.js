@@ -69,7 +69,7 @@ async function ensureAccessProfiles() {
     reopened_by UUID REFERENCES users(id) ON DELETE RESTRICT,
     finalized_at TIMESTAMPTZ,
     finalized_by UUID REFERENCES users(id) ON DELETE RESTRICT
-  `);
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS admin_recovery_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
