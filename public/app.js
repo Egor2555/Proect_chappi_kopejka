@@ -36,6 +36,88 @@ async function home(){
  }
  $('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Производство сегодня</h2>'+simpleTable(todayRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Количество']])+'</div>';
 }
+async function orders(){
+  state.orders=await api('/orders');
+  const canManage=state.user.role==='admin';
+  const visible=state.orders.filter(o=>o.status!=='archived');
+  const productChoices=productOptions();
+  $('#orders').innerHTML='<h1>Заказы</h1>'+
+    (canManage?'<div class="card"><h2>Новый заказ</h2><form id="orderForm">'+
+      '<label>Номер заказа<input name="orderNumber" required maxlength="80"></label>'+
+      '<label>Название заказа<input name="title" required maxlength="160"></label>'+
+      '<label>Приоритет<input name="priority" type="number" min="0" step="1" value="0"></label>'+
+      '<div><h3>Позиции заказа</h3><div id="orderItems"></div><button type="button" id="addOrderItem" class="secondary">+ Добавить типоразмер</button></div>'+
+      '<button type="submit">Создать заказ</button></form></div>':'')+
+    '<div class="card"><h2>Текущие заказы</h2>'+orderCards(visible,true)+'</div>';
+  const form=$('#orderForm');
+  if(form){
+    const box=$('#orderItems');
+    const addRow=(productId='',qty='')=>{
+      const used=[...box.querySelectorAll('select[name="productId"]')].map(x=>x.value);
+      const available=state.products.filter(p=>p.active&&(!used.includes(String(p.id))||String(p.id)===String(productId)));
+      if(!available.length){notify('Все доступные типоразмеры уже добавлены','error');return}
+      const row=document.createElement('div');row.className='row orderItem';
+      row.innerHTML='<label>Типоразмер<select name="productId">'+available.map(p=>'<option value="'+p.id+'" '+(String(p.id)===String(productId)?'selected':'')+'>'+formatProduct(p)+'</option>').join('')+'</select></label>'+
+        '<label>Количество<input name="requiredQty" type="number" min="1" step="1" inputmode="numeric" value="'+escapeHtml(qty||'')+'" required></label>'+
+        '<button type="button" class="secondary">Убрать</button>';
+      row.querySelector('button').onclick=()=>row.remove();
+      box.append(row);
+    };
+    $('#addOrderItem').onclick=()=>addRow();
+    addRow();
+    form.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const d=new FormData(form);
+      const items=[...box.querySelectorAll('.orderItem')].map(row=>({
+        productId:row.querySelector('[name="productId"]').value,
+        requiredQty:Number(row.querySelector('[name="requiredQty"]').value)
+      })).filter(x=>x.requiredQty>0);
+      if(!items.length){notify('Добавьте хотя бы одну позицию заказа','error');return}
+      try{
+        await api('/orders',{method:'POST',body:JSON.stringify({
+          orderNumber:String(d.get('orderNumber')||'').trim(),
+          title:String(d.get('title')||'').trim(),
+          priority:Number(d.get('priority')||0),
+          items
+        })});
+        notify('Заказ создан','success');
+        await loadBase();
+        await orders();
+      }catch(err){notify(err.message,'error')}
+    });
+  }
+  document.querySelectorAll('.activateOrder').forEach(b=>b.onclick=async()=>{
+    try{
+      await api('/orders/'+b.dataset.id+'/activate',{method:'POST',body:JSON.stringify({})});
+      notify('Заказ сделан активным','success');await loadBase();await orders();
+    }catch(err){
+      if(err.code==='ACTIVE_ORDER_UNFINISHED'){
+        const r=confirm('Текущий активный заказ ещё не завершён. Сделать выбранный заказ активным?');
+        if(!r)return;
+        try{await api('/orders/'+b.dataset.id+'/activate',{method:'POST',body:JSON.stringify({force:true})});notify('Активный заказ переключён','success');await loadBase();await orders()}
+        catch(e){notify(e.message,'error')}
+      }else notify(err.message,'error')
+    }
+  });
+  document.querySelectorAll('.priorityForm').forEach(f=>f.addEventListener('submit',async e=>{
+    e.preventDefault();
+    try{
+      await api('/orders/'+f.dataset.id+'/priority',{method:'PATCH',body:JSON.stringify({priority:Number(f.elements.priority.value)})});
+      notify('Приоритет сохранён','success');await loadBase();await orders();
+    }catch(err){notify(err.message,'error')}
+  }));
+  document.querySelectorAll('.cancelOrder').forEach(b=>b.onclick=async()=>{
+    const reason=prompt('Причина отмены заказа:');
+    if(!reason||!reason.trim())return;
+    try{await api('/orders/'+b.dataset.id+'/cancel',{method:'POST',body:JSON.stringify({reason:reason.trim()})});notify('Заказ отменён','success');await loadBase();await orders()}
+    catch(err){notify(err.message,'error')}
+  });
+  document.querySelectorAll('.archiveOrder').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Перенести заказ в архив?'))return;
+    try{await api('/orders/'+b.dataset.id+'/archive',{method:'PATCH',body:'{}'});notify('Заказ отправлен в архив','success');await loadBase();await orders()}
+    catch(err){notify(err.message,'error')}
+  });
+}
 function orderCards(rows,editable=false){
  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
  return rows.map((o,index)=>{
