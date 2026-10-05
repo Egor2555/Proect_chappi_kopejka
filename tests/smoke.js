@@ -68,7 +68,7 @@ async function must(path, options, expected=200) {
   assert.equal(stockAfter.find(x=>x.id===product.id).quantity,0);
   const shipments=await must('/api/shipments',{token:brigadier});
   assert.equal(shipments.length,1);
-  assert.equal(shipments[0].payroll_month,month);
+  assert.equal(String(shipments[0].payroll_month).slice(0,10),month);
   await must('/api/payments',{token:admin,method:'POST',body:{shipmentId:shipments[0].id,amountMinor:250,note:'CI credited'}},201);
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
