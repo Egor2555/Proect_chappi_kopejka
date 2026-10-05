@@ -678,9 +678,13 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount)
       throw new Error('Этот месяц уже закрыт. Посещаемость изменять нельзя.');
     for(const workerId of workerIds){
-      const member=await c.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3)',
+      const member=await c.query(`SELECT 1 FROM team_memberships m
+        JOIN workers w ON w.id=m.worker_id
+        WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3
+          AND (m.valid_to IS NULL OR m.valid_to>=$3)
+          AND w.active=true AND w.is_brigadier=false`,
         [workerId,teamId,workDate]);
-      if(!member.rowCount) throw new Error('Работник не состоит в выбранной бригаде на эту дату');
+      if(!member.rowCount) throw new Error('Работник не состоит в выбранной бригаде на эту дату или является бригадиром');
     }
     const before=(await c.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId])).rows;
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
