@@ -358,9 +358,9 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
     pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m, SUM(e.quantity)::int AS quantity
       FROM production_entries e JOIN products p ON p.id=e.product_id
       WHERE e.work_date=CURRENT_DATE AND e.voided_at IS NULL GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
-    pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
+    pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
       FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
-      WHERE p.active=true GROUP BY p.id ORDER BY p.length_mm`),
+      WHERE p.active=true GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
     pool.query(`SELECT o.id,o.order_number,o.title,o.priority,o.status,o.created_at,
       COALESCE(json_agg(json_build_object('section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,'length_m',p.length_mm / 1000.0,'required',i.required_qty,
         'done',COALESCE(done.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(done.qty,0),0))
@@ -1214,7 +1214,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
     GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
-  const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_m);
+  const missing=produced.filter(x=>x.rate_minor===null).map(x=>({section_width_mm:x.section_width_mm,section_height_mm:x.section_height_mm,length_m:x.length_m}));
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
   let earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
@@ -1301,7 +1301,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     if(!monthState?.brigadier_closed_at || monthState.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже окончательно закрыт');
-    const items=(await c.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
+    const items=(await c.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
       COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
       CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
@@ -1315,7 +1315,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
       GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
     const produced=items.filter(x=>Number(x.quantity)>0);
-    const missing=produced.filter(x=>x.rate_minor===null).map(x=>x.length_m+' м');
+    const missing=produced.filter(x=>x.rate_minor===null).map(x=>(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+x.length_m+' м');
     if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name) ORDER BY w.display_name) workers
