@@ -762,7 +762,7 @@ async function autoAllocateFreeStockToOrder(c, orderId, userId) {
       if(!available) continue;
       const move=Math.min(left,available);
       await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
-        VALUES($1,$2,$3,$4,'warehouse_auto')`,[batch.production_entry_id,orderId,item.product_id,move]);
+        VALUES($1,$2,$3,$4,'warehouse')`,[batch.production_entry_id,orderId,item.product_id,move]);
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
         VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическая выдача свободного остатка со склада в заказ')`,
         [item.product_id,-move,batch.production_entry_id,orderId,batch.id,userId]);
