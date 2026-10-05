@@ -526,7 +526,6 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
   const {orderNumber,title,priority=0,items=[]}=req.body;
   if(!orderNumber||!title||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Заполните заказ и его позиции'});
   const order=await tx(async c=>{
-    // Serialize queue decisions so two simultaneous order creations cannot both become active.
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
     const o=(await c.query('INSERT INTO orders(order_number,title,priority,created_by) VALUES($1,$2,$3,$4) RETURNING *',[orderNumber,title,Number(priority)||0,req.user.sub])).rows[0];
     for(const item of items){
@@ -535,6 +534,19 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
     }
     const hasActive=(await c.query("SELECT 1 FROM orders WHERE status='active' LIMIT 1")).rowCount>0;
     if(!hasActive) await c.query("UPDATE orders SET status='active' WHERE id=$1",[o.id]);
+    // Новый заказ сразу получает подходящие свободные остатки со склада.
+    // Если склад закрывает заказ полностью, заказ завершается автоматически.
+    await autoAllocateFreeStockToOrder(c,o.id,req.user.sub);
+    const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i
+      WHERE i.order_id=$1 AND i.required_qty >
+      COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+        WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[o.id])).rows[0].n;
+    if(missing===0){
+      await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[o.id]);
+      await c.query("UPDATE orders SET status='active' WHERE id=(
+        SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+      ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')");
+    }
     const created=(await c.query('SELECT * FROM orders WHERE id=$1',[o.id])).rows[0];
     await audit(c,req.user.sub,'create','order',o.id,null,created);
     return created;
@@ -591,87 +603,108 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
   res.json(result);
 }));
 
+async function autoAllocateFreeStockToOrder(c, orderId, userId) {
+  const order=(await c.query("SELECT id,status FROM orders WHERE id=$1 FOR UPDATE",[orderId])).rows[0];
+  if(!order || !['queued','active'].includes(order.status)) return {allocated:[]};
+  const items=(await c.query(`SELECT i.product_id,i.required_qty,
+      COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+        WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done
+    FROM order_items i WHERE i.order_id=$1 ORDER BY i.product_id FOR UPDATE`,[orderId])).rows;
+  const allocated=[];
+  for(const item of items){
+    let left=Math.max(0,Number(item.required_qty)-Number(item.done));
+    if(!left) continue;
+    await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.product_id]);
+    const batches=(await c.query(`SELECT m.id,m.production_entry_id,
+        (m.quantity_delta
+         -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa
+           WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
+         -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r
+           WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+      FROM inventory_movements m
+      WHERE m.product_id=$1
+        AND (m.movement_type IN ('production_in','surplus_transfer')
+          OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
+        AND m.quantity_delta>0
+      ORDER BY m.created_at,m.id FOR UPDATE`,[item.product_id])).rows;
+    for(const batch of batches){
+      if(left<=0) break;
+      const available=Math.max(0,Number(batch.available));
+      if(!available) continue;
+      const move=Math.min(left,available);
+      await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
+        VALUES($1,$2,$3,$4,'warehouse_auto')`,[batch.production_entry_id,orderId,item.product_id,move]);
+      await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+        VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическая выдача свободного остатка со склада в заказ')`,
+        [item.product_id,-move,batch.production_entry_id,orderId,batch.id,userId]);
+      left-=move;
+      allocated.push({productId:item.product_id,quantity:move});
+    }
+  }
+  return {allocated};
+}
+
+async function autoAllocateProductionToOrders(c, productionEntry, userId) {
+  await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
+  await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[productionEntry.product_id]);
+  const movement=(await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,created_by,note)
+    VALUES($1,'production_in',$2,$3,$4,'Производство дня: свободный склад до автоматического распределения')
+    RETURNING id`,[productionEntry.product_id,Number(productionEntry.quantity),productionEntry.id,userId])).rows[0];
+  let remaining=Number(productionEntry.quantity);
+  const allocations=[];
+  const candidates=(await c.query(`SELECT o.id,o.status,i.required_qty,
+      COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+        WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done
+    FROM orders o JOIN order_items i ON i.order_id=o.id
+    WHERE o.status IN ('active','queued') AND i.product_id=$1
+    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END, o.priority DESC, o.created_at ASC
+    FOR UPDATE OF o`,[productionEntry.product_id])).rows;
+  for(const candidate of candidates){
+    if(remaining<=0) break;
+    const need=Math.max(0,Number(candidate.required_qty)-Number(candidate.done));
+    if(!need) continue;
+    const move=Math.min(need,remaining);
+    await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
+      VALUES($1,$2,$3,$4,'automatic')`,[productionEntry.id,candidate.id,productionEntry.product_id,move]);
+    await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+      VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическое распределение производства по очереди заказов')`,
+      [productionEntry.product_id,-move,productionEntry.id,candidate.id,movement.id,userId]);
+    remaining-=move;
+    allocations.push({orderId:candidate.id,quantity:move});
+    const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
+      COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+        WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[candidate.id])).rows[0].n;
+    if(missing===0){
+      await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
+    }
+  }
+  if(remaining>0) {
+    await c.query("UPDATE inventory_movements SET note='Остаток производства дня на свободном складе' WHERE id=$1",[movement.id]);
+  }
+  // If the active order was completed by this production, promote the next queued order.
+  await c.query(`UPDATE orders SET status='active' WHERE id=(
+    SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+  ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
+  return {allocations,stockRemaining:remaining};
+}
+
 app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
-  const {workDate,productId,orderId=null,quantity,note=''}=req.body;
+  const {workDate,productId,quantity,note=''}=req.body;
   if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
     return res.status(400).json({error:'Проверьте дату, изделие и количество'});
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!singleTeam) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=singleTeam.id;
-  // Chappi Edition has exactly one brigade; the brigadier profile may manage it
-  // without being a worker-member of that brigade.
   const result=await tx(async c=>{
     const month=String(workDate).slice(0,7)+'-01';
     const closed=(await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
     if(closed) throw new Error('Этот месяц уже закрыт. Новое производство запрещено до отдельной процедуры корректировки.');
     const p=(await c.query(`INSERT INTO production_entries(work_date,team_id,product_id,order_id,quantity,rate_id,rate_snapshot_minor,total_minor,note,created_by)
-      VALUES($1,$2,$3,$4,$5,NULL,NULL,0,$6,$7) RETURNING *`,
-      [workDate,teamId,productId,orderId,Number(quantity),note,req.user.sub])).rows[0];
-    let remaining=Number(quantity);
-    if(orderId){
-      // Serialize competing production allocations for the same order so two
-      // simultaneous entries cannot both consume the same remaining order need.
-      const lockedOrder=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
-      if(!lockedOrder) throw new Error('Заказ не найден');
-      if(!['queued','active'].includes(lockedOrder.status))
-        throw new Error('Нельзя записывать производство непосредственно в завершённый, отменённый или архивный заказ');
-      const requested=(await c.query('SELECT required_qty FROM order_items WHERE order_id=$1 AND product_id=$2',[orderId,productId])).rows[0];
-      const done=(await c.query('SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL',[orderId,productId])).rows[0].qty;
-      if(!requested) throw new Error('В заказе нет выбранного типоразмера');
-      const needBefore=Math.max(0,Number(requested.required_qty)-Number(done));
-      const direct=Math.min(Number(quantity),needBefore);
-      if(direct>0) await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'direct')`,[p.id,orderId,productId,direct]);
-      remaining=Number(quantity)-direct;
-    }
-    const assigned=Math.max(0,Number(quantity)-remaining);
-    if(assigned>0) await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by)
-      VALUES($1,'production_in',$2,$3,$4,$5)`,[productId,assigned,p.id,orderId,req.user.sub]);
-    if(remaining>0){
-      const candidates=(await c.query(`SELECT o.id,i.required_qty,
-        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=o.id AND a.product_id=i.product_id),0) done
-        FROM orders o JOIN order_items i ON i.order_id=o.id
-        WHERE o.id<>COALESCE($1::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
-          AND o.status='queued' AND i.product_id=$2
-        ORDER BY o.priority DESC,o.created_at ASC FOR UPDATE OF o`,[orderId,productId])).rows;
-      for(const candidate of candidates){
-        const need=Math.max(0,Number(candidate.required_qty)-Number(candidate.done));
-        if(!need) continue;
-        const move=Math.min(need,remaining);
-        await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type) VALUES($1,$2,$3,$4,'surplus')`,
-          [p.id,candidate.id,productId,move]);
-        await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
-          VALUES($1,'surplus_transfer',$2,$3,$4,$5,'Автоматическое распределение излишка по очереди')`,
-          [productId,move,p.id,candidate.id,req.user.sub]);
-        remaining-=move;
-        const candidateMissing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
-          COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[candidate.id])).rows[0].n;
-        if(candidateMissing===0) {
-          await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[candidate.id]);
-          // Serialize queue activation so concurrent completions cannot activate two orders.
-          await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
-          await c.query(`UPDATE orders SET status='active' WHERE id=(
-            SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
-          ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
-        } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[candidate.id]);
-        if(!remaining) break;
-      }
-    }
-    if(remaining>0) await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,created_by,note)
-      VALUES($1,'production_in',$2,$3,$4,'Излишек на свободный склад')`,[productId,remaining,p.id,req.user.sub]);
-    if(orderId){
-      const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
-        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.voided_at IS NULL AND a.order_id=i.order_id AND a.product_id=i.product_id),0)`,[orderId])).rows[0].n;
-      if(missing===0) {
-        await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[orderId]);
-        // Serialize queue activation so concurrent completions cannot activate two orders.
-        await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
-        await c.query(`UPDATE orders SET status='active' WHERE id=(
-          SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
-        ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
-      } else await c.query("UPDATE orders SET status='active' WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[orderId]);
-    }
-    await audit(c,req.user.sub,'create','production_entry',p.id,null,p);
-    return p;
+      VALUES($1,$2,$3,NULL,$4,NULL,NULL,0,$5,$6) RETURNING *`,
+      [workDate,teamId,productId,Number(quantity),note,req.user.sub])).rows[0];
+    const distribution=await autoAllocateProductionToOrders(c,p,req.user.sub);
+    await audit(c,req.user.sub,'create','production_entry',p.id,null,{...p,distribution});
+    return {...p,distribution};
   });
   res.status(201).json(result);
 }));
