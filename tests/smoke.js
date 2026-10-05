@@ -73,10 +73,10 @@ async function must(path, options, expected=200) {
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
   const productionHistory=await must('/api/production?date='+day1,{token:admin});
   assert.equal(productionHistory.length,2);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
