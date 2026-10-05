@@ -171,9 +171,10 @@ async function people(){
    if(!date||!teamId)return;
    try{
      const [membersForDate,attendance]=await Promise.all([api('/team-members?date='+encodeURIComponent(date)),api('/attendance?date='+encodeURIComponent(date))]);
+     const eligibleMembers=membersForDate.filter(w=>!w.is_brigadier&&w.active);
      const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
-     box.innerHTML=membersForDate.length
-     ? '<label class="check-all"><input type="checkbox" id="attendanceAll"> <strong>Все работники коллектива</strong></label>'+membersForDate.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('')
+     box.innerHTML=eligibleMembers.length
+     ? '<label class="check-all"><input type="checkbox" id="attendanceAll"> <strong>Все работники коллектива</strong></label>'+eligibleMembers.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('')
      : '<p class="empty">На эту дату в бригаде нет работников.</p>';
    const all=$('#attendanceAll');
    const boxes=[...box.querySelectorAll('input[name="workerIds"]')];
