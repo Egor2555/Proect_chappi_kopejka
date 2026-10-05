@@ -142,7 +142,7 @@ async function audit(client, actor, action, type, id, beforeData, afterData, rea
     [actor, action, type, id || null, beforeData ? JSON.stringify(beforeData) : null, afterData ? JSON.stringify(afterData) : null, reason || null]
   );
 }
-async function auth(req, res, next) {
+async async function auth(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   try {
     if (!token) throw new Error('missing');
