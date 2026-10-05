@@ -497,8 +497,7 @@ app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
-app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {productId,periodMonth,amountMinor}=req.body;
+app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {  const {productId,periodMonth,amountMinor}=req.body;
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
     return res.status(400).json({error:'Проверьте изделие, месяц и сумму в копейках'});
   const result=await tx(async c=>{
@@ -543,9 +542,7 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
         WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[o.id])).rows[0].n;
     if(missing===0){
       await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[o.id]);
-      await c.query("UPDATE orders SET status='active' WHERE id=(
-        SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
-      ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')");
+      await c.query("UPDATE orders SET status='active' WHERE id=(SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')");
     }
     const created=(await c.query('SELECT * FROM orders WHERE id=$1',[o.id])).rows[0];
     await audit(c,req.user.sub,'create','order',o.id,null,created);
@@ -997,8 +994,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const start=month+'-01';
   const r=await pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
     COALESCE(SUM(sa.quantity),0)::int quantity,
-    r.amount_minor::text rate_minor,
-    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
+    r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
     JOIN shipment_items si ON si.product_id=p.id
     JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
