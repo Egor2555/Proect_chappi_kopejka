@@ -45,6 +45,7 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
   await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
   await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query('ALTER TABLE orders ALTER COLUMN order_number DROP NOT NULL');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
   // The referenced table must exist before adding the foreign key on older/empty databases.
   await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
