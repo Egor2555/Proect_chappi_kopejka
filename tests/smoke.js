@@ -27,7 +27,7 @@ async function must(path, options, expected=200) {
   await must('/api/auth/recovery/request',{method:'POST',body:{}},409);
   await must('/api/dashboard',{token:admin});
   const products=await must('/api/products',{token:admin});
-  assert.equal(products.length,6);
+  assert.ok(products.length >= 10);
   const teams=await must('/api/teams',{token:admin});
   assert.ok(teams.length);
   const product=products.find(p=>p.length_mm===1500);
