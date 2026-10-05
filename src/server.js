@@ -1284,7 +1284,9 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       ? {quantity:totals.quantity,totalMinor:'0'}
       : {quantity:totals.quantity,totalMinor:totals.totalMinor.toString()};
     res.json({month,items:visibleItems,total:visibleTotal,missingRates:missing,earnings:earnings.rows,
-    eligibleHappyKopeckWorkers:[],happyKopeck:{residualMinor:'0',winnerId:null},closed:!!closureRow});
+    eligibleHappyKopeckWorkers:req.user.role==='admin' ? eligibleHappyKopeckWorkers : [],
+    happyKopeck:closedHappyKopeck || {residualMinor:residualMinor.toString(),winnerId:null,status:residualMinor>0n?'pending':'not_needed'},
+    closed:!!closureRow});
 }));
 
 app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req,res) => {
