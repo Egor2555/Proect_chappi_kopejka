@@ -17,7 +17,7 @@ test('PostgreSQL schema creates the complete core domain', { skip: !process.env.
       'shipment_items','payment_entries','attendance_entries','audit_log','login_log',
       'monthly_closures','monthly_worker_earnings','penny_events','fund_entries']) assert.ok(names.has(name), 'missing table: '+name);
     const lengths = await pool.query('SELECT length_mm FROM products ORDER BY length_mm');
-    assert.deepEqual(lengths.rows.map(x=>x.length_mm), [1500,1700,2000,2250,2500,3000]);
+    assert.deepEqual(lengths.rows.map(x=>x.length_mm), [1500,1700,2000,2250,2500,2500,3000,3000,5000,6000]);
   } finally {
     await pool.end();
   }
