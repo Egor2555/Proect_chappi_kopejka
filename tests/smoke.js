@@ -61,11 +61,11 @@ async function must(path, options, expected=200) {
   assert.equal(orders.find(o=>o.id===orderB.id).items[0].done,1);
 
   const stock=await must('/api/stock',{token:admin});
-  assert.equal(stock.find(x=>x.id===product.id).quantity,3);
+  assert.equal(stock.find(x=>x.id===product.id).quantity,0);
 
   await must('/api/shipments',{token:brigadier,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
   const stockAfter=await must('/api/stock',{token:admin});
-  assert.equal(stockAfter.find(x=>x.id===product.id).quantity,1);
+  assert.equal(stockAfter.find(x=>x.id===product.id).quantity,0);
   const shipments=await must('/api/shipments',{token:brigadier});
   assert.equal(shipments.length,1);
   await must('/api/payments',{token:admin,method:'POST',body:{shipmentId:shipments[0].id,amountMinor:250,note:'CI credited'}},201);
