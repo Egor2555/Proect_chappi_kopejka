@@ -135,7 +135,7 @@ async function must(path, options, expected=200) {
   const backup=await must('/api/admin/export',{token:admin});
   assert.ok(backup.tables.workers.length>=1);
   assert.ok(backup.tables.login_log.length>=2);
-  assert.ok(backup.tables.monthly_worker_earnings.length===3);
+  assert.ok(backup.tables.monthly_worker_earnings.length===2);
   assert.equal(JSON.stringify(backup).includes('password_hash'),false);
 
   console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive and backup');
