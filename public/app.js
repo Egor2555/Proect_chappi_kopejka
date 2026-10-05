@@ -196,7 +196,7 @@ async function production(){
    };
  }
 }
-function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+(p.length_label||formatMeters(p.length_m)+'метра'));}
+function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+formatMeters(p.length_m)+' м');}
 async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
