@@ -43,7 +43,7 @@ async function must(path, options, expected=200) {
   const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
   const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
   const attendance=await must('/api/attendance?date='+today,{token:admin});
