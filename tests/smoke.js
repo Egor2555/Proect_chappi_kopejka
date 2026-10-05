@@ -47,9 +47,9 @@ async function must(path, options, expected=200) {
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
   await must('/api/workers/'+worker.id+'/brigadier',{token:admin,method:'PATCH',body:{}},200);
   await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[workerS.id,workerC.id]}});
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
-  const attendance=await must('/api/attendance?date='+today,{token:admin});
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[workerC.id]}});
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[workerS.id,workerC.id]}});
+  const attendance=await must('/api/attendance?date='+today,{token:brigadier});
   assert.equal(attendance.length,3);
 
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
