@@ -1525,10 +1525,15 @@ app.use((err,_req,res,_next) => {
 async function start() {
   const schema=fs.readFileSync(path.join(__dirname,'../db/schema.sql'),'utf8');
   await pool.query(schema);
-  const standardLengths=[1.5,1.7,2,2.25,2.5,3];
-  for (const length of standardLengths) {
-    await pool.query(`INSERT INTO products(code,length_mm) VALUES($1,$2) ON CONFLICT(code) DO NOTHING`,
-      [`60x40-${String(Math.round(length*1000))}`,Math.round(length*1000)]);
+  const standardProducts=[
+    [60,40,1.5],[60,40,1.7],[60,40,2],[60,40,2.25],[60,40,2.5],[60,40,3],
+    [60,60,2.5],[60,60,3],[60,80,5],[60,80,6]
+  ];
+  for (const [width,height,length] of standardProducts) {
+    const lengthMm=Math.round(length*1000);
+    await pool.query(`INSERT INTO products(code,section_width_mm,section_height_mm,length_mm)
+      VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING`,
+      [`${width}x${height}-${String(lengthMm)}`,width,height,lengthMm]);
   }
   await pool.query(`INSERT INTO teams(name) VALUES('Коллектив') ON CONFLICT(name) DO NOTHING`);
   await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Коллектив' ORDER BY created_at,id LIMIT 1)");
