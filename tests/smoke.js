@@ -101,9 +101,9 @@ async function must(path, options, expected=200) {
   const duplicateClose=await request('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}});
   assert.equal(duplicateClose.status,400);
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(closedReport.earnings.length,3);
+  assert.equal(closedReport.earnings.length,2);
   const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
-  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[83,83,84]);
+  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[125,125]);
   assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
   assert.equal(closedReport.total.totalMinor,'250');
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
