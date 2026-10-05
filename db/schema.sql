@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS rates (
 
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_number TEXT NOT NULL UNIQUE,
+  order_number TEXT UNIQUE,
   title TEXT NOT NULL,
   priority INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'queued'
