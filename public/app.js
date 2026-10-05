@@ -16,6 +16,7 @@ $('#adminRecoveryForm').addEventListener('submit',async e=>{e.preventDefault();c
 async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=state.user.username+' · '+roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=state.user.role!=='brigadier');const workerStockTab=document.querySelector('[data-tab="stock"]');if(workerStockTab)workerStockTab.hidden=state.user.role==='worker';document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
+function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';return Number(n.toFixed(3)).toString()+' м'}
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatMeters(p.length_m)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
@@ -101,31 +102,45 @@ function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.sec
 async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows,[['length_m','Длина, м'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
- const payments=state.user.role==='admin'?await api('/payments'):[];
  const canShip=state.user.role==='brigadier';
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>(i.length_m)+' м × '+i.quantity).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>formatLength(i.length_m)+' × '+i.quantity).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>'+
- (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+
+ (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><p class="muted">Выберите заказ или оставьте «Без заказа» для отправки свободного склада.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+
  (state.user.role==='admin'?'<div class="card"><h2>Расчётный фонд</h2><p class="muted">Отправки оформляет только бригадир.</p></div>':'');
  const f=$('#shipmentForm');
  if(f){
-   const opts=await api('/shipment-options');
    const box=$('#shipmentItems');
-   const addRow=(x,locked)=>{
-     const row=document.createElement('div');row.className='row shipmentItem';
-     row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+x.available+'" value="'+x.available+'" required></label><small>Доступно: '+x.available+' шт.</small>';
-     row.dataset.available=x.available;box.append(row);
+   const orderSelect=f.elements.orderId;
+   const loadOptions=async()=>{
+     const opts=await api('/shipment-options');
+     box.replaceChildren();
+     const orderId=orderSelect.value;
+     const source=orderId?(opts.orderItems||[]):(opts.stockItems||[]);
+     const merged=new Map();
+     for(const x of source){
+       const key=String(x.productId);
+       const prev=merged.get(key);
+       if(prev) prev.available+=Number(x.available)||0;
+       else merged.set(key,{...x,available:Number(x.available)||0});
+     }
+     const items=[...merged.values()].filter(x=>x.available>0);
+     if(!items.length){box.innerHTML='<p class="empty">Для выбранного режима доступной продукции нет.</p>';return}
+     for(const x of items){
+       const row=document.createElement('div');row.className='row shipmentItem';
+       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+x.available+'" value="'+x.available+'" required></label><small>Доступно: '+x.available+' шт.</small>';
+       row.dataset.available=x.available;box.append(row);
+     }
    };
-   (opts.orderItems||[]).forEach(x=>addRow(x,false)); (opts.stockItems||[]).forEach(x=>addRow(x,false));
+   orderSelect.addEventListener('change',()=>loadOptions().catch(e=>notify(e.message,'error')));
+   await loadOptions();
    const st=await api('/month/state?month='+localDate().slice(0,7));
    $('#reopenMonthBtn').hidden=!st.brigadierClosed||st.finalized;
    $('#closeMonthBtn').hidden=st.brigadierClosed||st.finalized;
-   $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Месяц закрыт для текущих отправок','success');shipments()}catch(e){notify(e.message,'error')}};
-   $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Текущий месяц продолжен','success');shipments()}catch(e){notify(e.message,'error')}};
-   f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f);const items=[...box.querySelectorAll('.shipmentItem')].map(row=>({productId:row.querySelector('[name=productId]').value,quantity:Number(row.querySelector('[name=quantity]').value)})).filter(x=>x.quantity>0);if(!items.length){notify('Нет доступной продукции','error');return}try{await api('/shipments',{method:'POST',body:JSON.stringify({shipmentNumber:d.get('shipmentNumber'),orderId:d.get('orderId')||null,recipient:d.get('recipient'),items})});notify('Отправка записана','success');shipments()}catch(err){notify(err.message,'error')}});
+   $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Месяц закрыт для текущих отправок','success');await shipments()}catch(e){notify(e.message,'error')}};
+   $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Текущий месяц продолжен','success');await shipments()}catch(e){notify(e.message,'error')}};
+   f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f);const items=[...box.querySelectorAll('.shipmentItem')].map(row=>({productId:row.querySelector('[name=productId]').value,quantity:Number(row.querySelector('[name=quantity]').value)})).filter(x=>x.quantity>0);if(!items.length){notify('Нет доступной продукции','error');return}try{await api('/shipments',{method:'POST',body:JSON.stringify({shipmentNumber:d.get('shipmentNumber'),orderId:d.get('orderId')||null,recipient:d.get('recipient'),items})});notify('Отправка записана','success');await shipments()}catch(err){notify(err.message,'error')}});
  }
- const pf=$('#paymentForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault()});
 }
 async function people(){
  state.workers=await api('/workers');
