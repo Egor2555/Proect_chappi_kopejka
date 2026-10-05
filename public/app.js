@@ -8,7 +8,31 @@ function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;',
 function roleName(r){return ({admin:'Администратор',brigadier:'Бригадир',worker:'Работник'})[r]||r}
 function showTab(tab){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==tab);document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b){showTab(b.dataset.tab);renderTab(b.dataset.tab).catch(err=>notify(err.message,'error'))}});
-document.querySelectorAll('[data-login-profile]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('[data-login-profile]').forEach(x=>x.classList.toggle('active',x===b));$('#loginForm [name=profile]').value=b.dataset.loginProfile;$('#loginError').textContent='';}));
+async function updateLoginProfile(profile){
+  document.querySelectorAll('[data-login-profile]').forEach(x=>x.classList.toggle('active',x.dataset.loginProfile===profile));
+  $('#loginForm [name=profile]').value=profile;
+  $('#loginError').textContent='';
+  const pinLabel=$('#pinLabel'), pinInput=$('#loginForm [name=pin]'), submit=$('#loginForm button[type=submit]');
+  if(profile==='worker'){
+    try{
+      const status=await api('/auth/profile-status');
+      const enabled=!!status.workerPinEnabled;
+      pinLabel.hidden=!enabled;
+      pinInput.required=enabled;
+      pinInput.value='';
+      if(enabled){submit.textContent='Войти';}
+      else {submit.textContent='Открытый доступ';}
+    }catch(err){pinLabel.hidden=false;pinInput.required=true;submit.textContent='Войти';}
+  }else{
+    pinLabel.hidden=false;
+    pinInput.required=true;
+    pinInput.value='';
+    submit.textContent='Войти';
+  }
+}
+document.querySelectorAll('[data-login-profile]').forEach(b=>b.addEventListener('click',()=>updateLoginProfile(b.dataset.loginProfile)));
+document.querySelector('[data-login-profile="brigadier"]').classList.add('active');
+updateLoginProfile('brigadier');
 document.querySelector('[data-login-profile="brigadier"]').classList.add('active');
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});state.token=d.token;localStorage.setItem('chappiToken',d.token);await boot()}catch(err){$('#loginError').textContent=err.message;$('#adminRecoveryStart').hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true)}});
 $('#adminRecoveryStart').addEventListener('click',async()=>{const b=$('#adminRecoveryStart');b.disabled=true;try{const d=await api('/auth/recovery/request',{method:'POST',body:'{}'});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').hidden=false;}catch(err){$('#recoveryError').textContent=err.message;$('#adminRecoveryForm').hidden=false;}finally{b.disabled=false}});
