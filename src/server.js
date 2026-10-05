@@ -641,7 +641,7 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {  co
     const ms=(await c.query('SELECT * FROM month_states WHERE period_month=$1',[periodMonth])).rows[0];
     if(!ms?.brigadier_closed_at || ms.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount) throw new Error('Месяц уже окончательно рассчитан');
-    if(!(await c.query('SELECT 1 FROM shipments WHERE payroll_month=$1 AND EXISTS (SELECT 1 FROM shipment_items si WHERE si.shipment_id=shipments.id AND si.product_id=$2) LIMIT 1',[periodMonth,productId])).rowCount)
+    if(!(await c.query('SELECT 1 FROM shipments s JOIN shipment_items si ON si.shipment_id=s.id WHERE s.payroll_month::date=$1::date AND si.product_id=$2 LIMIT 1',[periodMonth,productId])).rowCount)
       throw new Error('Цена нужна только для типоразмеров, которые были отправлены в этом месяце');
     const before=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,periodMonth])).rows[0]||null;
     const after=(await c.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
