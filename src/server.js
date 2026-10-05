@@ -418,7 +418,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   if(!workerCheck.rows[0].active) return res.status(400).json({error:'Нельзя добавить архивного работника в бригаду'});
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
-    if(!team) throw new Error('Единственная бригада не настроена');
+    if(!team) throw new Error('Коллектив не настроен');
     await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL",[validFrom,workerId]);
     return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,team.id,validFrom])).rows[0];
   });
@@ -436,7 +436,7 @@ app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату'});
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
-  if(!team) return res.status(500).json({error:'Единственная бригада не настроена'});
+  if(!team) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=team.id;
   const r=await pool.query(`SELECT w.id,w.display_name,w.active
     FROM workers w JOIN team_memberships m ON m.worker_id=w.id
@@ -459,14 +459,14 @@ app.get('/api/teams', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  res.status(409).json({error:'В Chappi Edition предусмотрена только одна бригада. Её название не создаётся повторно.'});
+  res.status(409).json({error:'В Chappi Edition предусмотрен только один коллектив. Его название не создаётся повторно.'});
 }));
 
 app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {workDate,workerIds=[]}=req.body;
   if(!workDate||!Array.isArray(workerIds)) return res.status(400).json({error:'Недостаточно данных'});
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
-  if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
+  if(!singleTeam) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=singleTeam.id;
   const created=await tx(async c=>{
     // Serialize attendance replacement for the same brigade/day so two saves cannot overwrite each other mid-transaction.
@@ -596,7 +596,7 @@ app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (
   if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
     return res.status(400).json({error:'Проверьте дату, изделие и количество'});
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
-  if(!singleTeam) return res.status(500).json({error:'Единственная бригада не настроена'});
+  if(!singleTeam) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=singleTeam.id;
   // Chappi Edition has exactly one brigade; the brigadier profile may manage it
   // without being a worker-member of that brigade.
@@ -1243,7 +1243,7 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     // an older version with several teams, so restore the history but normalize
     // the active state back to the single-brigade rule.
     await c.query("UPDATE teams SET active=false");
-    await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
+    await c.query("UPDATE teams SET active=true WHERE id=(SELECT id FROM teams WHERE name='Коллектив' ORDER BY created_at,id LIMIT 1)");
     // Restore may come from an older build that allowed several active orders.
     // Keep the oldest/highest-priority active order and return the others to the queue.
     await c.query("UPDATE orders SET status='queued' WHERE status='active' AND id <> (SELECT id FROM orders WHERE status='active' ORDER BY priority DESC,created_at,id LIMIT 1)");
@@ -1286,8 +1286,8 @@ async function start() {
     await pool.query(`INSERT INTO products(code,length_mm) VALUES($1,$2) ON CONFLICT(code) DO NOTHING`,
       [`60x40-${String(Math.round(length*1000))}`,Math.round(length*1000)]);
   }
-  await pool.query(`INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING`);
-  await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Бригада 1' ORDER BY created_at,id LIMIT 1)");
+  await pool.query(`INSERT INTO teams(name) VALUES('Коллектив') ON CONFLICT(name) DO NOTHING`);
+  await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Коллектив' ORDER BY created_at,id LIMIT 1)");
   await ensureAccessProfiles();
   // Startup self-heals the single-active-order invariant after legacy restores.
   await pool.query("UPDATE orders SET status='queued' WHERE status='active' AND id <> (SELECT id FROM orders WHERE status='active' ORDER BY priority DESC,created_at,id LIMIT 1)");
