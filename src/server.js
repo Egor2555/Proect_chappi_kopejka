@@ -552,7 +552,24 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       const shipped=(await c.query(`SELECT COUNT(*)::int n FROM shipment_allocations sa JOIN inventory_movements im ON im.id=sa.inventory_movement_id
         JOIN production_entries pe ON pe.id=im.production_entry_id WHERE pe.daily_report_id=$1`,[report.id])).rows[0].n;
       if(Number(shipped)>0) throw new Error('Отчёт нельзя изменить: его продукция уже попала в отправку');
-      await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE daily_report_id=$1 AND voided_at IS NULL',[report.id,'Редактирование дневного отчёта бригадиром']);
+      const oldEntries=(await c.query('SELECT * FROM production_entries WHERE daily_report_id=$1 AND voided_at IS NULL FOR UPDATE',[report.id])).rows;
+      for(const oldEntry of oldEntries){
+        const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id])).rows.map(x=>x.order_id).filter(Boolean);
+        const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[oldEntry.id])).rows;
+        for(const movement of movements){
+          const reverse=-Number(movement.quantity_delta);
+          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
+            VALUES($1,$2,$3,$4,$5,$6,'Сторно при редактировании дневного отчёта')`,
+            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id, movement.order_id,req.user.sub]);
+        }
+        await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id]);
+        for(const orderId of affectedOrders){
+          const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
+            COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
+          if(Number(missing)>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
+        }
+        await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1',[oldEntry.id,'Редактирование дневного отчёта бригадиром']);
+      }
       await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,team.id]);
       await c.query('UPDATE daily_production_reports SET updated_at=now(),created_by=$2 WHERE id=$1',[report.id,req.user.sub]);
     } else {
@@ -944,6 +961,26 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
     return {orderId,items:assigned,completed:missing===0};
   });
   res.status(201).json(result);
+}));
+
+app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
+  const orderRows=await pool.query(`SELECT o.id order_id,o.order_number,o.status,i.product_id,
+    GREATEST(0,LEAST(i.required_qty-COALESCE(sh.shipped,0),
+      COALESCE(prod.produced,0)-COALESCE(sh.shipped,0)))::int AS available,
+    p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
+    FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
+    LEFT JOIN LATERAL(SELECT SUM(quantity)::int produced FROM production_allocations WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL) prod ON true
+    LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si JOIN shipments s ON s.id=si.shipment_id WHERE s.order_id=o.id AND si.product_id=i.product_id) sh ON true
+    WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
+  const stockRows=await pool.query(`SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
+    GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
+    FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
+    WHERE p.active=true GROUP BY p.id ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`);
+  const orderItems=orderRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
+  const stockItems=stockRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
+  res.json({orderItems,stockItems});
 }));
 
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
