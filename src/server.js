@@ -1202,7 +1202,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
-  const r=await pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
+  const r=await pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
     COALESCE(SUM(sa.quantity),0)::int quantity,
     r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
