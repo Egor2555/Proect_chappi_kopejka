@@ -67,7 +67,7 @@ async function orders(){
   const productChoices=productOptions();
   $('#orders').innerHTML='<h1>Заказы</h1>'+
     (canManage?'<div class="card"><h2>Новый заказ</h2><form id="orderForm">'+
-      '<label>Номер заказа<input name="orderNumber" required maxlength="80"></label>'+
+      ''+
       '<label>Название заказа<input name="title" required maxlength="160"></label>'+
       '<label>Приоритет<input name="priority" type="number" min="0" step="1" value="0"></label>'+
       '<div><h3>Позиции заказа</h3><div id="orderItems"></div><button type="button" id="addOrderItem" class="secondary">+ Добавить типоразмер</button></div>'+
@@ -99,7 +99,6 @@ async function orders(){
       if(!items.length){notify('Добавьте хотя бы одну позицию заказа','error');return}
       try{
         await api('/orders',{method:'POST',body:JSON.stringify({
-          orderNumber:String(d.get('orderNumber')||'').trim(),
           title:String(d.get('title')||'').trim(),
           priority:Number(d.get('priority')||0),
           items
