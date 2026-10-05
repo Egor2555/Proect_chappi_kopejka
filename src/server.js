@@ -264,6 +264,11 @@ app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async 
   res.json({ok:true,message:'Доступ восстановлен. Войдите через профиль «Бригадир» с новым PIN.'});
 }));
 
+app.get('/api/auth/profile-status', asyncRoute(async (req,res) => {
+  const row = (await pool.query("SELECT pin_enabled FROM users WHERE active=true AND role='worker' LIMIT 1")).rows[0];
+  res.json({workerPinEnabled: !!row?.pin_enabled});
+}));
+
 app.post('/api/auth/login', asyncRoute(async (req,res) => {
   const profile = String(req.body.profile || '').trim();
   const pin = String(req.body.pin || '');
