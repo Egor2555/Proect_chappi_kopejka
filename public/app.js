@@ -110,7 +110,7 @@ function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.sec
 async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows,[['length_m','Длина, м'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
- const canShip=['admin','brigadier'].includes(state.user.role);
+ const canShip=state.user.role==='brigadier';
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
  const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>formatLength(i.length_m)+' × '+i.quantity).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>'+
