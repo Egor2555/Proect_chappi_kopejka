@@ -613,8 +613,11 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {  co
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
     return res.status(400).json({error:'Проверьте изделие, месяц и сумму в копейках'});
   const result=await tx(async c=>{
-    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount)
-      throw new Error('Нельзя менять расценку закрытого месяца');
+    const ms=(await c.query('SELECT * FROM month_states WHERE period_month=$1',[periodMonth])).rows[0];
+    if(!ms?.brigadier_closed_at || ms.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount) throw new Error('Месяц уже окончательно рассчитан');
+    if(!(await c.query('SELECT 1 FROM shipments WHERE payroll_month=$1 AND EXISTS (SELECT 1 FROM shipment_items si WHERE si.shipment_id=shipments.id AND si.product_id=$2) LIMIT 1',[periodMonth,productId])).rowCount)
+      throw new Error('Цена нужна только для типоразмеров, которые были отправлены в этом месяце');
     const before=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,periodMonth])).rows[0]||null;
     const after=(await c.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
       VALUES($1,$2,$3,$4) ON CONFLICT(product_id,period_month) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,created_by=EXCLUDED.created_by
@@ -982,7 +985,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
@@ -990,17 +993,19 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
     // could pass the "open month" check while close-month freezes its snapshot.
     const currentMonthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
-    const closedMonth=(await c.query(`SELECT 1 FROM monthly_closures
-      WHERE period_month=date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date)`)).rowCount>0;
-    if(closedMonth) throw new Error('Текущий месяц уже закрыт. Новые отгрузки запрещены.');
+    const monthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
+    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[monthStart])).rows[0]||null;
+    const payrollMonth=(monthState?.brigadier_closed_at && !monthState?.reopened_at) ? new Date(Date.UTC(Number(monthStart.slice(0,4)),Number(monthStart.slice(5,7)),1)) : new Date(monthStart+'T00:00:00Z');
+    if(monthState?.finalized_at) payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
+    const payrollMonthText=payrollMonth.toISOString().slice(0,7)+'-01';
     if(orderId){
       const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
       if(!order) throw new Error('Заказ не найден');
       if(['cancelled','archived'].includes(order.status))
         throw new Error('Отменённый или архивный заказ нельзя отгружать');
     }
-    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
-      [shipmentNumber,orderId,recipient,note,req.user.sub])).rows[0];
+    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      [shipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
     for(const item of items){
       const qty=Number(item.quantity);
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
@@ -1012,8 +1017,10 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
             WHERE s2.order_id=i.order_id AND si2.product_id=i.product_id),0) shipped
           FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[orderId,item.productId])).rows[0];
         if(!orderItem) throw new Error('В выбранном заказе нет такого типоразмера');
-        const orderRemaining=Math.max(0,Number(orderItem.required_qty)-Number(orderItem.shipped));
-        if(qty>orderRemaining) throw new Error('Отгрузка превышает остаток выбранной позиции заказа: '+orderRemaining+' шт.');
+        const producedForOrder=Number((await c.query(`SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations
+          WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[orderId,item.productId])).rows[0].qty);
+        const orderRemaining=Math.max(0,Math.min(Number(orderItem.required_qty)-Number(orderItem.shipped),producedForOrder-Number(orderItem.shipped)));
+        if(qty>orderRemaining) throw new Error('Отгрузка превышает изготовленный доступный остаток выбранной позиции: '+orderRemaining+' шт.');
       }
       const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
@@ -1095,6 +1102,43 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
     return payment;
   });
   res.status(201).json(result);
+}));
+
+
+function nextMonthStart(monthStart){ const d=new Date(String(monthStart)+'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth()+1); return d.toISOString().slice(0,10); }
+
+app.get('/api/month/state', auth, asyncRoute(async (req,res) => {
+  const month=String(req.query.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const state=(await pool.query('SELECT * FROM month_states WHERE period_month=$1',[month])).rows[0]||null;
+  const finalized=(await pool.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
+  res.json({month,brigadierClosed:!!state?.brigadier_closed_at&&!state?.reopened_at,finalized:finalized||!!state?.finalized_at});
+}));
+
+app.post('/api/month/close', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  const month=String(req.body.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[month]);
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Месяц уже окончательно рассчитан администратором');
+    const existing=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[month])).rows[0];
+    if(existing?.brigadier_closed_at && !existing?.reopened_at) return existing;
+    return (await c.query(`INSERT INTO month_states(period_month,brigadier_closed_at,brigadier_closed_by,reopened_at,reopened_by)
+      VALUES($1,now(),$2,NULL,NULL)
+      ON CONFLICT(period_month) DO UPDATE SET brigadier_closed_at=now(),brigadier_closed_by=EXCLUDED.brigadier_closed_by,reopened_at=NULL,reopened_by=NULL
+      RETURNING *`,[month,req.user.sub])).rows[0];
+  });
+  res.status(201).json(result);
+}));
+
+app.post('/api/month/reopen', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  const month=String(req.body.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[month]);
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('После расчёта администратором месяц продолжить нельзя');
+    const state=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[month])).rows[0];
+    if(!state?.brigadier_closed_at || state.reopened_at) return state||null;
+    return (await c.query(`UPDATE month_states SET reopened_at=now(),reopened_by=$2 WHERE period_month=$1 RETURNING *`,[month,req.user.sub])).rows[0];
+  });
+  res.json(result||{});
 }));
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
@@ -1197,8 +1241,10 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   try {
     result=await tx(async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
+    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[start])).rows[0];
+    if(!monthState?.brigadier_closed_at || monthState.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
-      throw new Error('Этот месяц уже закрыт');
+      throw new Error('Этот месяц уже окончательно закрыт');
     const items=(await c.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
       COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
@@ -1283,6 +1329,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
+    await c.query('UPDATE month_states SET finalized_at=now(),finalized_by=$2 WHERE period_month=$1',[start,req.user.sub]);
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
     return closure;
     });
