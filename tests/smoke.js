@@ -64,10 +64,10 @@ async function must(path, options, expected=200) {
   const stock=await must('/api/stock',{token:admin});
   assert.equal(stock.find(x=>x.id===product.id).quantity,3);
 
-  await must('/api/shipments',{token:admin,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
+  await must('/api/shipments',{token:brigadier,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
   const stockAfter=await must('/api/stock',{token:admin});
   assert.equal(stockAfter.find(x=>x.id===product.id).quantity,1);
-  const shipments=await must('/api/shipments',{token:admin});
+  const shipments=await must('/api/shipments',{token:brigadier});
   assert.equal(shipments.length,1);
   await must('/api/payments',{token:admin,method:'POST',body:{shipmentId:shipments[0].id,amountMinor:250,note:'CI credited'}},201);
   const payments=await must('/api/payments',{token:admin});
@@ -95,6 +95,7 @@ async function must(path, options, expected=200) {
 
   await must('/api/orders/'+orderA.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/orders/'+orderB.id+'/archive',{token:admin,method:'PATCH',body:{}});
+  await must('/api/month/close',{token:brigadier,method:'POST',body:{month:today.slice(0,7)}},201);
   await must('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}},201);
   const duplicateClose=await request('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}});
   assert.equal(duplicateClose.status,400);
