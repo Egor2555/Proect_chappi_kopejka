@@ -42,7 +42,7 @@ function orderCards(rows,editable=false){
    const orderHighlight=o.status==='active'?'order-active':(o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued')?'order-next':'');
    const warehouseForm='';
    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
-     ((o.items||[]).map(i=>'<p>'+((i.lengthM||i.length_m))+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
+     ((o.items||[]).map(i=>'<p>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+formatMeters(i.lengthM||i.length_m)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
      (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
      (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
