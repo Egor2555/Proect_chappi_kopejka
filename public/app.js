@@ -161,7 +161,7 @@ function orderCards(rows,editable=false){
       ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>' : '';
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
-    const status=o.status==='completed'?'✓ Выполнен':escapeHtml(o.status);
+    const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':'⚪ В ОЧЕРЕДИ'):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
     return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+status+'</span></div><div class="order-table"><div class="order-table-head"><span>Типоразмер</span><span>Нужно</span><span>Сделано</span><span>Осталось</span></div>'+items+'</div>'+activate+priority+cancel+archive+'</div>';
   }).join('');
 }
