@@ -417,11 +417,16 @@ app.get('/api/workers', auth, asyncRoute(async (_req,res) => {
 app.post('/api/workers', auth, roles('admin'), asyncRoute(async (req,res) => {
   const name=String(req.body.displayName||'').trim();
   if (!name) return res.status(400).json({error:'Укажите имя работника'});
-  const r=await pool.query('INSERT INTO workers(display_name) VALUES($1) RETURNING *',[name]);
-  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','worker',$2,$3)",[req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
-  res.status(201).json(r.rows[0]);
+  const result=await tx(async c=>{
+    const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+    if(!team) throw new Error('Коллектив не настроен');
+    const worker=(await c.query('INSERT INTO workers(display_name) VALUES($1) RETURNING *',[name])).rows[0];
+    await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,CURRENT_DATE)',[worker.id,team.id]);
+    await audit(c,req.user.sub,'create','worker',worker.id,null,worker);
+    return worker;
+  });
+  res.status(201).json(result);
 }));
-
 app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (req,res) => {
   const before=(await pool.query('SELECT * FROM workers WHERE id=$1',[req.params.id])).rows[0];
   if(!before) return res.status(404).json({error:'Работник не найден'});
