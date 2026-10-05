@@ -38,10 +38,7 @@ function orderCards(rows,editable=false){
  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
  return rows.map((o,index)=>{
    const orderHighlight=o.status==='active'?'order-active':(o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued')?'order-next':'');
-   const warehouseForm=(['admin','brigadier'].includes(state.user.role)&&['queued','active'].includes(o.status))
-    ? '<form class="warehouseAssignForm card" data-id="'+o.id+'"><strong>Выдать со склада в заказ</strong><div class="row"><label>Типоразмер<select name="productId">'+
-      (o.items||[]).map(i=>'<option value="'+(i.productId||i.product_id)+'">'+((i.lengthM||i.length_m))+' м · '+i.remaining+' шт. осталось</option>').join('')+
-      '</select></label><label>Количество<input name="quantity" type="number" min="1" step="1" required></label><button>Выдать со склада</button></div></form>' : '';
+   const warehouseForm='';
    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
      ((o.items||[]).map(i=>'<p>'+((i.lengthM||i.length_m))+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
      warehouseForm+
@@ -125,23 +122,14 @@ async function loadProductionHistory(){
  const rows=await api('/production?date='+encodeURIComponent(date));
  let box=view.querySelector('#productionHistory');
  if(!box){box=document.createElement('div');box.id='productionHistory';box.className='card';view.append(box)}
- box.innerHTML='<h2>Записи за выбранный день</h2>'+rows.map(r=>'<div class="row"><div><strong>'+r.length_m+' м</strong> · '+r.quantity+' шт.<br><small>'+escapeHtml(r.team_name)+' · '+escapeHtml(r.order_number||'Без заказа')+' · '+escapeHtml(r.created_by_name)+'</small></div>'+(state.user.role==='admin'?'<button class="voidProduction" data-id="'+r.id+'">Исправить запись</button>':'')+'</div>').join('')+(rows.length?'':'<p class="empty">За этот день записей пока нет</p>');
+ box.innerHTML='<h2>Записи за выбранный день</h2>'+rows.map(r=>'<div class="row"><div><strong>'+r.length_m+' м</strong> · '+r.quantity+' шт.<br><small>'+escapeHtml(r.team_name)+' · '+escapeHtml('Автораспределение по очереди')+' · '+escapeHtml(r.created_by_name)+'</small></div>'+(state.user.role==='admin'?'<button class="voidProduction" data-id="'+r.id+'">Исправить запись</button>':'')+'</div>').join('')+(rows.length?'':'<p class="empty">За этот день записей пока нет</p>');
  box.querySelectorAll('.voidProduction').forEach(b=>b.onclick=async()=>{const reason=prompt('Укажи причину отмены записи. После отмены введи правильное количество заново.');if(!reason)return;try{await api('/production/'+b.dataset.id+'/void',{method:'POST',body:JSON.stringify({reason})});notify('Запись отменена. Введи корректное производство заново.');await loadProductionHistory()}catch(err){notify(err.message,'error')}})
 }
 async function orders(){state.orders=await api('/orders');$('#orders').innerHTML='<h1>Заказы</h1>'+orderCards(state.orders,true)+(state.user.role==='admin'?'<div class="card"><h2>Новый заказ</h2><form id="orderForm"><label>Номер заказа<input name="orderNumber" required></label><label>Название<input name="title" required></label><label>Приоритет (0 — обычный)<input name="priority" type="number" min="0" value="0"></label><div id="orderItems"><div class="row"><label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label></div></div><button type="button" id="addOrderItem">Добавить типоразмер</button><button type="submit">Создать заказ</button></form></div>':'');const form=$('#orderForm');if(form){
  $('#addOrderItem').onclick=()=>{const row=document.createElement('div');row.className='row orderItem';row.innerHTML='<label>Типоразмер<select name="productId">'+productOptions()+'</select></label><label>Количество<input name="requiredQty" type="number" min="1" value="1"></label><button type="button" class="removeOrderItem">Убрать</button>';row.querySelector('.removeOrderItem').onclick=()=>row.remove();$('#orderItems').append(row)};
  form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form);const products=f.getAll('productId'),quantities=f.getAll('requiredQty');try{await api('/orders',{method:'POST',body:JSON.stringify({orderNumber:f.get('orderNumber'),title:f.get('title'),priority:Number(f.get('priority')),items:products.map((productId,i)=>({productId,requiredQty:Number(quantities[i])}))})});notify('Заказ создан');await loadBase();orders()}catch(err){notify(err.message,'error')}});
 }
- document.querySelectorAll('.warehouseAssignForm').forEach(form=>form.addEventListener('submit',async e=>{
-   e.preventDefault();
-   const d=new FormData(form);
-   try{
-     await api('/orders/'+form.dataset.id+'/warehouse-assign',{method:'POST',body:JSON.stringify({items:[{productId:d.get('productId'),quantity:Number(d.get('quantity'))}]})});
-     notify('Складская продукция выдана в заказ','success');
-     await loadBase();
-     orders();
-   }catch(err){notify(err.message,'error')}
- }));
+
  document.querySelectorAll('.activateOrder').forEach(b=>b.onclick=async()=>{
    try{await api('/orders/'+b.dataset.id+'/activate',{method:'POST',body:JSON.stringify({force:false})});notify('Заказ стал активным','success');await loadBase();orders()}
    catch(err){
