@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#172b3a"><title>Chappi Edition — Учёт столбов</title>
-  <link rel="stylesheet" href="/app.css?v=6732">
+  <link rel="stylesheet" href="/app.css?v=6733">
 </head>
 <body>
   <header class="topbar"><div><strong>Учёт производства ОГМ</strong></div><div class="row top-actions"><div id="userBadge"></div><button id="logoutGlobal" hidden>Выйти</button></div></header>
   <main>
     <section id="loginView" class="panel login">
       <h1>Вход в систему</h1>
-      <form id="loginForm"><div class="profile-choice"><button type="button" data-login-profile="brigadier">Бригадир</button><button type="button" data-login-profile="worker">Работник</button></div><input type="hidden" name="profile" value="brigadier"><label id="pinLabel">PIN<input name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8"></label><button type="submit">Войти</button></form>
+      <form id="loginForm"><div class="profile-choice"><button type="button" data-login-profile="brigadier">Бригадир</button><button type="button" data-login-profile="worker">Работник</button></div><input type="hidden" name="profile" value="brigadier"><label id="pinLabel">PIN<input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8"></label><button type="submit">Войти</button></form>
       <p id="loginError" class="error" role="alert"></p>
       <button type="button" id="adminRecoveryStart" class="secondary" hidden>Восстановить доступ администратора</button>
       <form id="adminRecoveryForm" hidden>
         <p class="muted">Код придёт на закреплённую почту. Он действует 6 часов и используется один раз.</p>
         <label>Код из письма<input name="code" inputmode="numeric" pattern="[0-9]*" maxlength="8" required></label>
-        <label>Новый PIN администратора<input name="newPin" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required></label>
+        <label>Новый PIN администратора<input type="password" name="newPin" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required></label>
         <button type="submit">Подтвердить код и задать новый PIN</button>
         <p id="recoveryError" class="error" role="alert"></p>
       </form>
@@ -29,5 +29,5 @@
       <section id="home" class="view"></section><section id="production" class="view" hidden></section><section id="orders" class="view" hidden></section><section id="stock" class="view" hidden></section><section id="shipments" class="view" hidden></section><section id="people" class="view" hidden></section><section id="reports" class="view" hidden></section><section id="fund" class="view" hidden></section><section id="archive" class="view" hidden></section><section id="profile" class="view" hidden></section><section id="rates" class="view" hidden></section><section id="admin" class="view" hidden></section>
     </section>
   </main>
-  <script src="/app.js?v=6732" defer></script>
+  <script src="/app.js?v=6733" defer></script>
 </body></html>
