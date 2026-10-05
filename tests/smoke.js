@@ -23,6 +23,8 @@ async function must(path, options, expected=200) {
   await must('/api/auth/recovery/complete',{method:'POST',body:{code:'12345678',newPin:'12'}},400);
   const adminLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:String(2500+5)}});
   const admin=adminLogin.token;
+  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
+  const brigadier=brigadierLogin.token;
   await must('/api/auth/recovery/request',{method:'POST',body:{}},409);
   await must('/api/dashboard',{token:admin});
   const products=await must('/api/products',{token:admin});
@@ -43,7 +45,8 @@ async function must(path, options, expected=200) {
   const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
   const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
-  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
+  await must('/api/workers/'+worker.id+'/brigadier',{token:admin,method:'PATCH',body:{}},200);
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[workerS.id,workerC.id,worker.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
   await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
   const attendance=await must('/api/attendance?date='+today,{token:admin});
