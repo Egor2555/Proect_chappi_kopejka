@@ -512,7 +512,7 @@ app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (
 
 app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!team) throw new Error('Коллектив не настроен');
   const report=(await pool.query('SELECT * FROM daily_production_reports WHERE work_date=$1 AND team_id=$2',[date,team.id])).rows[0]||null;
@@ -527,7 +527,7 @@ app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async
 
 app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {workDate,items=[],workerIds=[]}=req.body;
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!items.length||!Array.isArray(workerIds))
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!items.length||!Array.isArray(workerIds))
     return res.status(400).json({error:'Укажите дату, изготовленные типоразмеры и работавших людей'});
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
