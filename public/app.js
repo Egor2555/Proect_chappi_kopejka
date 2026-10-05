@@ -69,14 +69,22 @@ async function production(){
  const workerRows=workers.filter(w=>!w.is_brigadier).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
  $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p><p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
  const extra=$('#dailyExtraRows');
- $('#addDailySize').onclick=()=>{
+ const addExtraRow=(selectedProductId='',quantity='')=>{
    const used=[...document.querySelectorAll('#dailyDefaultRows [data-product-id],#dailyExtraRows select')].map(x=>x.dataset?.productId||x.value);
-   const available=state.products.filter(p=>p.active&&!used.includes(String(p.id)));
+   const available=state.products.filter(p=>p.active&&(!used.includes(String(p.id))||String(p.id)===String(selectedProductId)));
    if(!available.length){notify('Нет других разрешённых типоразмеров','error');return}
    const row=document.createElement('div');row.className='row dailyExtra';
-   row.innerHTML='<label>Типоразмер<select>'+available.map(p=>'<option value="'+p.id+'">'+formatProduct(p)+'</option>').join('')+'</select></label><label>Количество<input type="number" min="1" step="1" required></label><button type="button">Убрать</button>';
+   row.innerHTML='<label>Типоразмер<select>'+available.map(p=>'<option value="'+p.id+'" '+(String(p.id)===String(selectedProductId)?'selected':'')+'>'+formatProduct(p)+'</option>').join('')+'</select></label><label>Количество<input type="number" min="1" step="1" value="'+escapeHtml(quantity||'')+'" required></label><button type="button">Убрать</button>';
    row.querySelector('button').onclick=()=>row.remove();extra.append(row);
  };
+ $('#addDailySize').onclick=()=>addExtraRow();
+ if(report.exists){
+   const defaultIds=new Set(defaultProducts.map(p=>String(p.id)));
+   for(const item of (report.items||[])){
+     const pid=String(item.product_id||item.productId||'');
+     if(pid&&!defaultIds.has(pid)) addExtraRow(pid,item.quantity);
+   }
+ }
  $('#saveDailyReport').onclick=async()=>{
    const items=[];
    document.querySelectorAll('#dailyDefaultRows [data-product-id]').forEach(inp=>{const q=Number(inp.value||0);if(q>0)items.push({productId:inp.dataset.productId,quantity:q})});
