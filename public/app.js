@@ -179,8 +179,9 @@ async function production(){
    return '<div class="row productionReportItem '+tone+'"><label><strong>'+formatProduct(p)+'</strong><input data-product-id="'+p.id+'" type="number" min="0" step="1" inputmode="numeric" value="'+(ex?.quantity||'')+'" placeholder="Количество"></label></div>';
  }).join('');
  const checked=new Set((report.workerIds||[]).map(String));
- const workerRows=workers.filter(w=>!w.is_brigadier).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
- $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p><p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
+ const brigadier=workers.find(w=>w.is_brigadier&&w.active);
+  const workerRows=workers.filter(w=>!w.is_brigadier&&w.active).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
+ $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
  const extra=$('#dailyExtraRows');
  const addExtraRow=(selectedProductId='',quantity='')=>{
    const used=[...document.querySelectorAll('#dailyDefaultRows [data-product-id],#dailyExtraRows select')].map(x=>x.dataset?.productId||x.value);
@@ -266,40 +267,18 @@ async function shipments(){
 async function people(){
  state.workers=await api('/workers');
  const canManage=state.user.role==='admin';
- const canAttendance=state.user.role==='brigadier';
- const members=await api('/team-members?date='+encodeURIComponent(localDate()));
- $('#people').innerHTML='<h1>Работники и присутствие</h1><div class="card"><p><strong>Коллектив:</strong> '+escapeHtml(teamName())+'</p>'+simpleTable(state.workers,[['display_name','Имя'],['active','Активен']])+'</div>'+
- (canManage?'<div class="card"><h2>Состав коллектива</h2><p class="muted">Только администратор добавляет и убирает людей. Удаление из коллектива не стирает историю.</p><h3>Сейчас в коллективе</h3>'+members.map(w=>'<p>'+escapeHtml(w.display_name)+(w.is_brigadier?' <strong>— Бригадир</strong>':'')+' <button class="removeMember" data-id="'+w.id+'">Убрать из коллектива</button></p>').join('')+'<form id="membershipForm"><label>Добавить работника<select name="workerId">'+state.workers.filter(w=>w.active&&!members.some(m=>m.id===w.id)).map(w=>'<option value="'+w.id+'">'+escapeHtml(w.display_name)+'</option>').join('')+'</select></label><label>Дата начала<input name="validFrom" type="date" required value="'+localDate()+'"></label><button>Добавить в бригаду</button></form></div>':'')+
- (canManage?'<div class="card"><h2>Добавить работника в систему</h2><form id="workerForm"><label>Имя<input name="displayName" required></label><button>Добавить</button></form></div>':'')+
- (canManage?'<div class="card"><h2>Назначить бригадира</h2><select id="brigadierWorker">'+state.workers.filter(w=>w.active).map(w=>'<option value="'+w.id+'" '+(w.is_brigadier?'selected':'')+'>'+escapeHtml(w.display_name)+'</option>').join('')+'</select><button id="assignBrigadier">Сохранить бригадира</button></div>':'')+
- (canAttendance?'<div class="card"><h2>Кто сегодня работал</h2><form id="attendanceForm"><label>Дата<input type="date" name="workDate" required value="'+localDate()+'"></label><p><strong>Коллектив:</strong> '+escapeHtml(teamName())+'</p><div id="attendanceChecklist" class="checklist"><p class="muted">Загрузка состава коллектива…</p></div><button>Сохранить присутствие</button></form><p class="muted">Отмечаются только те, кто работал. Причины отсутствия не записываются.</p></div>':'');
- document.querySelectorAll('.removeMember').forEach(b=>b.onclick=async()=>{if(!confirm('Убрать работника из коллектива? История сохранится.'))return;try{await api('/team-memberships/'+b.dataset.id,{method:['D','E','L','E','T','E'].join(''),body:JSON.stringify({validTo:localDate()})});notify('Работник убран из коллектива');people()}catch(err){notify(err.message,'error')}});
- const wf=$('#workerForm');if(wf)wf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/workers',{method:'POST',body:JSON.stringify({displayName:new FormData(wf).get('displayName')})});notify('Работник добавлен');people()}catch(err){notify(err.message,'error')}});
- const ab=$('#assignBrigadier');if(ab)ab.onclick=async()=>{try{await api('/workers/'+$('#brigadierWorker').value+'/brigadier',{method:'PATCH',body:JSON.stringify({})});notify('Бригадир назначен','success');people()}catch(e){notify(e.message,'error')}};
- const mf=$('#membershipForm');if(mf)mf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(mf));try{await api('/team-memberships',{method:'POST',body:JSON.stringify(d)});notify('Работник добавлен в бригаду');people()}catch(err){notify(err.message,'error')}});
- const af=$('#attendanceForm');
- const loadAttendancePeople=async()=>{
-   if(!af)return;
-   const date=af.elements.workDate.value,teamId=singleTeamId(),box=$('#attendanceChecklist');
-   if(!date||!teamId)return;
-   try{
-     const [membersForDate,attendance]=await Promise.all([api('/team-members?date='+encodeURIComponent(date)),api('/attendance?date='+encodeURIComponent(date))]);
-     const eligibleMembers=membersForDate.filter(w=>!w.is_brigadier&&w.active);
-     const present=new Set(attendance.filter(x=>x.team_id===teamId).map(x=>x.worker_id));
-     box.innerHTML=eligibleMembers.length
-     ? '<label class="check-all"><input type="checkbox" id="attendanceAll"> <strong>Все работники коллектива</strong></label>'+eligibleMembers.map(w=>'<label><input type="checkbox" name="workerIds" value="'+w.id+'" '+(present.has(w.id)?'checked':'')+'> '+escapeHtml(w.display_name)+(w.active?'':' (архив)')+'</label>').join('')
-     : '<p class="empty">На эту дату в бригаде нет работников.</p>';
-   const all=$('#attendanceAll');
-   const boxes=[...box.querySelectorAll('input[name="workerIds"]')];
-   if(all){
-     all.checked=boxes.length>0&&boxes.every(x=>x.checked);
-     all.indeterminate=boxes.some(x=>x.checked)&&!all.checked;
-     all.onchange=()=>boxes.forEach(x=>x.checked=all.checked);
-     boxes.forEach(x=>x.onchange=()=>{all.checked=boxes.every(y=>y.checked);all.indeterminate=boxes.some(y=>y.checked)&&!all.checked;});
-   }
-   }catch(err){box.innerHTML='<p class="error">'+escapeHtml(err.message)+'</p>';}
- };
- if(af){af.elements.workDate.addEventListener('change',loadAttendancePeople);loadAttendancePeople();af.addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(af);try{await api('/attendance',{method:'POST',body:JSON.stringify({workDate:fd.get('workDate'),workerIds:fd.getAll('workerIds')})});notify('Присутствие сохранено');await loadAttendancePeople()}catch(err){notify(err.message,'error')}});}
+ $('#people').innerHTML='<h1>Коллектив</h1>'+
+ '<div class="card"><p class="muted">Администратор один раз добавляет работников. Здесь же видно, кто назначен бригадиром.</p><div class="checklist">'+
+ state.workers.filter(w=>w.active).map(w=>'<div class="worker-list-row"><strong>'+escapeHtml(w.display_name)+'</strong>'+(w.is_brigadier?' <span class="role-badge">БРИГАДИР</span>':'')+'</div>').join('')+
+ (state.workers.filter(w=>w.active).length?'':'<p class="empty">В коллективе пока нет работников.</p>')+
+ '</div></div>'+
+ (canManage?'<div class="card"><h2>Добавить работника</h2><form id="workerForm"><label>Имя / фамилия<input name="displayName" required></label><button>Добавить в коллектив</button></form></div>':'')+
+ (canManage?'<div class="card"><h2>Бригадир</h2><p class="muted">Назначенный бригадир виден в списке, но в ежедневном отчёте не входит в зарплатный состав.</p><select id="brigadierWorker">'+state.workers.filter(w=>w.active).map(w=>'<option value="'+w.id+'" '+(w.is_brigadier?'selected':'')+'>'+escapeHtml(w.display_name)+'</option>').join('')+'</select><button id="assignBrigadier">Сохранить бригадира</button></div>':'')+
+ (canManage?'<div class="card"><h2>Архив работников</h2><div class="checklist">'+state.workers.filter(w=>!w.active).map(w=>'<div class="worker-list-row">'+escapeHtml(w.display_name)+'</div>').join('')+(state.workers.some(w=>!w.active)?'':'<p class="empty">Архив пуст.</p>')+'</div></div>':'');
+ const wf=$('#workerForm');
+ if(wf)wf.addEventListener('submit',async e=>{e.preventDefault();try{await api('/workers',{method:'POST',body:JSON.stringify({displayName:new FormData(wf).get('displayName')})});notify('Работник добавлен в коллектив');people()}catch(err){notify(err.message,'error')}});
+ const ab=$('#assignBrigadier');
+ if(ab)ab.onclick=async()=>{try{await api('/workers/'+$('#brigadierWorker').value+'/brigadier',{method:'PATCH',body:JSON.stringify({})});notify('Бригадир назначен','success');people()}catch(e){notify(e.message,'error')}};
 }
 async function reports(){
  const month=localDate().slice(0,7);
