@@ -794,7 +794,8 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
     if(!need) continue;
     const move=Math.min(need,remaining);
     await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
-      VALUES($1,$2,$3,$4,'automatic')`,[productionEntry.id,candidate.id,productionEntry.product_id,move]);
+      VALUES($1,$2,$3,$4,$5)`,[productionEntry.id,candidate.id,productionEntry.product_id,move,
+        candidate.status==='active' ? 'direct' : 'surplus']);
     await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
       VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическое распределение производства по очереди заказов')`,
       [productionEntry.product_id,-move,productionEntry.id,candidate.id,movement.id,userId]);
