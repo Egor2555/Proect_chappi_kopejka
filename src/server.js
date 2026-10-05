@@ -355,14 +355,14 @@ app.post('/api/admin/access/:role/unlock', auth, roles('admin'), asyncRoute(asyn
 
 app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
   const [today, stock, queue] = await Promise.all([
-    pool.query(`SELECT p.length_mm / 1000.0 AS length_m, SUM(e.quantity)::int AS quantity
+    pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m, SUM(e.quantity)::int AS quantity
       FROM production_entries e JOIN products p ON p.id=e.product_id
-      WHERE e.work_date=CURRENT_DATE AND e.voided_at IS NULL GROUP BY p.length_mm ORDER BY p.length_mm`),
+      WHERE e.work_date=CURRENT_DATE AND e.voided_at IS NULL GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
     pool.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
       FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
       WHERE p.active=true GROUP BY p.id ORDER BY p.length_mm`),
     pool.query(`SELECT o.id,o.order_number,o.title,o.priority,o.status,o.created_at,
-      COALESCE(json_agg(json_build_object('length_m',p.length_mm / 1000.0,'required',i.required_qty,
+      COALESCE(json_agg(json_build_object('section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,'length_m',p.length_mm / 1000.0,'required',i.required_qty,
         'done',COALESCE(done.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(done.qty,0),0))
         ORDER BY p.length_mm),'[]'::json) AS items
       FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
@@ -627,7 +627,7 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
 }));
 
 app.get('/api/rates', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT r.*,p.length_mm / 1000.0 AS length_m,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.length_mm`);
+  const r=await pool.query(`SELECT r.*,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.code FROM rates r JOIN products p ON p.id=r.product_id ORDER BY r.period_month DESC,p.section_width_mm,p.section_height_mm,p.length_mm`);
   res.json(r.rows);
 }));
 
@@ -651,7 +651,7 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {  co
 }));
 
 app.get('/api/orders', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT o.*,COALESCE(json_agg(json_build_object('productId',i.product_id,'length_m',p.length_mm / 1000.0,'required',i.required_qty,
+  const r=await pool.query(`SELECT o.*,COALESCE(json_agg(json_build_object('productId',i.product_id,'section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,'length_m',p.length_mm / 1000.0,'required',i.required_qty,
     'done',COALESCE(d.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(d.qty,0),0)) ORDER BY p.length_mm),'[]') AS items
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
     LEFT JOIN LATERAL(SELECT SUM(a.quantity)::int qty FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL)d ON true
@@ -898,9 +898,9 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
 }));
 
 app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT p.id,p.code,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int quantity
+  const r=await pool.query(`SELECT p.id,p.code,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COALESCE(SUM(m.quantity_delta),0)::int quantity
     FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
-    GROUP BY p.id ORDER BY p.length_mm`);
+    GROUP BY p.id,p.code,p.section_width_mm,p.section_height_mm,p.length_mm ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`);
   res.json(r.rows);
 }));
 
@@ -990,7 +990,7 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
 }));
 
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('length_m',p.length_mm / 1000.0,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
+  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,'length_m',p.length_mm / 1000.0,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
     FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
     GROUP BY s.id ORDER BY s.shipped_at DESC LIMIT 200`);
   res.json(r.rows);
