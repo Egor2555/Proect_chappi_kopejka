@@ -119,19 +119,27 @@ async function orders(){
   });
 }
 function orderCards(rows,editable=false){
- if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
- return rows.map((o,index)=>{
-   const orderHighlight=o.status==='active'?'order-active':(o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued')?'order-next':'');
-   const warehouseForm='';
-   return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+(o.status==='completed'?'✓ Выполнен':escapeHtml(o.status))+'</span></div>'+
-     ((o.items||[]).map(i=>'<p>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+formatMeters(i.lengthM||i.length_m)+' м: '+i.done+' / '+i.required+' · '+(Number(i.remaining)>0?'остаток '+i.remaining:'✓')+'</p>').join(''))+
-     warehouseForm+
-     (state.user.role==='admin'&&editable&&o.status==='queued'?'<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>':'')+
-     (state.user.role==='admin'&&editable?'<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button>Сохранить приоритет</button></form>':'')+
-     (state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)?'<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>':'')+
-     (state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)?'<button class="archiveOrder" data-id="'+o.id+'">В архив</button>':'')+
-     '</div>';
- }).join('');
+  if(!rows.length)return '<div class="empty">Активных заказов нет</div>';
+  return rows.map((o,index)=>{
+    const orderHighlight=o.status==='active'
+      ? 'order-active'
+      : (o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued') ? 'order-next' : '');
+    const items=(o.items||[]).map(i=>{
+      const length=formatMeters(i.lengthM||i.length_m);
+      const progress=Number(i.remaining)>0 ? 'остаток '+i.remaining : '✓';
+      return '<p>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+length+' м: '+i.done+' / '+i.required+' · '+progress)+'</p>';
+    }).join('');
+    const activate=state.user.role==='admin'&&editable&&o.status==='queued'
+      ? '<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>' : '';
+    const priority=state.user.role==='admin'&&editable
+      ? '<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button type="submit">Сохранить приоритет</button></form>' : '';
+    const cancel=state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)
+      ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>' : '';
+    const archive=state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)
+      ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
+    const status=o.status==='completed'?'✓ Выполнен':escapeHtml(o.status);
+    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+status+'</span></div>'+items+activate+priority+cancel+archive+'</div>';
+  }).join('');
 }
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 async function production(){
