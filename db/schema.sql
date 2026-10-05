@@ -226,9 +226,11 @@ ALTER TABLE production_allocations ADD CONSTRAINT production_allocations_allocat
   CHECK (allocation_type IN ('direct','surplus','warehouse'));
 CREATE INDEX IF NOT EXISTS idx_allocations_order_product ON production_allocations(order_id,product_id);
 
-INSERT INTO products(code,length_mm) VALUES
-  ('60x40-1500',1500),('60x40-1700',1700),('60x40-2000',2000),
-  ('60x40-2250',2250),('60x40-2500',2500),('60x40-3000',3000)
+INSERT INTO products(code,section_width_mm,section_height_mm,length_mm) VALUES
+  ('60x40-1500',60,40,1500),('60x40-1700',60,40,1700),('60x40-2000',60,40,2000),
+  ('60x40-2250',60,40,2250),('60x40-2500',60,40,2500),('60x40-3000',60,40,3000),
+  ('60x60-2500',60,60,2500),('60x60-3000',60,60,3000),
+  ('60x80-5000',60,80,5000),('60x80-6000',60,80,6000)
 ON CONFLICT(code) DO NOTHING;
 INSERT INTO teams(name) VALUES('Бригада 1') ON CONFLICT(name) DO NOTHING;
 
