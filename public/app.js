@@ -149,8 +149,9 @@ function orderCards(rows,editable=false){
       : (o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued') ? 'order-next' : '');
     const items=(o.items||[]).map(i=>{
       const length=formatMeters(i.lengthM||i.length_m);
-      const progress=Number(i.remaining)>0 ? 'остаток '+i.remaining : '✓';
-      return '<p>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+length+' м: '+i.done+' / '+i.required+' · '+progress)+'</p>';
+      const remaining=Number(i.remaining||0);
+      const done=Number(i.done||0);
+      return '<div class="order-item-row"><div class="order-size"><strong>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' × '+length+' м')+'</strong></div><div class="order-num"><span>Нужно</span><strong>'+Number(i.required||0)+'</strong></div><div class="order-num"><span>Сделано</span><strong>'+done+'</strong></div><div class="order-num"><span>Осталось</span><strong>'+(remaining>0?remaining:'✓')+'</strong></div></div>';
     }).join('');
     const activate=state.user.role==='admin'&&editable&&o.status==='queued'
       ? '<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>' : '';
@@ -161,7 +162,7 @@ function orderCards(rows,editable=false){
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
     const status=o.status==='completed'?'✓ Выполнен':escapeHtml(o.status);
-    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>'+escapeHtml(o.order_number)+' · '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+status+'</span></div>'+items+activate+priority+cancel+archive+'</div>';
+    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br><span class="tag '+(o.priority>0?'green':'')+'">'+(o.priority>0?'Приоритет '+o.priority:'Очередь')+'</span></div><span>'+status+'</span></div><div class="order-table"><div class="order-table-head"><span>Типоразмер</span><span>Нужно</span><span>Сделано</span><span>Осталось</span></div>'+items+'</div>'+activate+priority+cancel+archive+'</div>';
   }).join('');
 }
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
