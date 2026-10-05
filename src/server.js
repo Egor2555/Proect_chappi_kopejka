@@ -1070,8 +1070,19 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
         const orderRemaining=Math.max(0,Math.min(Number(orderItem.required_qty)-Number(orderItem.shipped),producedForOrder-Number(orderItem.shipped)));
         if(qty>orderRemaining) throw new Error('Отгрузка превышает изготовленный доступный остаток выбранной позиции: '+orderRemaining+' шт.');
       }
-      const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
-      if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
+      // Free warehouse stock and order-reserved stock are different pools.
+      // Warehouse assignment already subtracts the reserved quantity from the
+      // free-stock ledger, so checking only SUM(quantity_delta) would wrongly
+      // reject a shipment that is fully covered by an earlier warehouse assignment.
+      const stock=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty);
+      let reservedAvailable=0;
+      if(orderId){
+        reservedAvailable=Number((await c.query(`SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.reservation_movement_id=r.id),0)),0)::int qty
+          FROM inventory_movements r
+          WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL`,[item.productId,orderId])).rows[0].qty);
+      }
+      const totalAvailable=Math.max(0,stock)+Math.max(0,reservedAvailable);
+      if(totalAvailable<qty) throw new Error('Недостаточно доступной продукции выбранного типоразмера');
       const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3) RETURNING id',[sh.id,item.productId,qty])).rows[0];
       // First consume stock that was explicitly assigned to this order.
       // Assignment already removed it from free warehouse stock, so no second
