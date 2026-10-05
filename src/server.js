@@ -62,6 +62,70 @@ async function ensureAccessProfiles() {
   await pool.query("UPDATE shipments SET payroll_month=date_trunc('month',shipped_at)::date WHERE payroll_month IS NULL");
   await pool.query("ALTER TABLE shipments ALTER COLUMN payroll_month SET DEFAULT date_trunc('month',CURRENT_TIMESTAMP)::date");
   await pool.query('CREATE INDEX IF NOT EXISTS idx_shipments_payroll_month ON shipments(payroll_month)');
+t express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { Pool } = require('pg');
+const { calculateMonthlyWorkerEarnings } = require('./domain');
+const { chooseHappyKopeckWinner } = require('./penny');
+const { validateBackup, validateBackupRelations, buildRestorePlan, remapUserReferences, RESTORE_ORDER } = require('./backup');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const app = express();
+app.set('trust proxy', 1);
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined });
+const PORT = Number(process.env.PORT || 8080);
+const JWT_SECRET = process.env.JWT_SECRET;
+const PIN_KEY = crypto.createHash('sha256').update('Chappi Edition PIN storage:' + JWT_SECRET).digest();
+function encryptPin(pin) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', PIN_KEY, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(pin), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv.toString('base64url'), tag.toString('base64url'), ciphertext.toString('base64url')].join(':');
+}
+function decryptPin(value) {
+  if (!value) return null;
+  const [ivText, tagText, dataText] = String(value).split(':');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', PIN_KEY, Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+}
+function validPin(pin) { return /^\d{4,8}$/.test(String(pin)); }
+async function recordPinFailure(user) {
+  const r = await pool.query('UPDATE users SET pin_failed_attempts=pin_failed_attempts+1, pin_locked=(pin_failed_attempts+1)>=5 WHERE id=$1 RETURNING pin_failed_attempts,pin_locked',[user.id]);
+  return r.rows[0];
+}
+async function ensureAccessProfiles() {
+  // Migration for shipment-to-production traceability. It lets payroll value
+  // only actually shipped units while preserving the original production day.
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
+  await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
+  await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
+  // The referenced table must exist before adding the foreign key on older/empty databases.
+  await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    work_date DATE NOT NULL,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(work_date,team_id)
+  )`);
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS daily_report_id UUID REFERENCES daily_production_reports(id) ON DELETE RESTRICT');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_production_daily_report ON production_entries(daily_report_id)');
+  await pool.query('ALTER TABLE shipments ADD COLUMN IF NOT EXISTS payroll_month DATE');
+  await pool.query("UPDATE shipments SET payroll_month=date_trunc('month',shipped_at)::date WHERE payroll_month IS NULL");
+  await pool.query("ALTER TABLE shipments ALTER COLUMN payroll_month SET DEFAULT date_trunc('month',CURRENT_TIMESTAMP)::date");
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_shipments_payroll_month ON shipments(payroll_month)');
   await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     work_date DATE NOT NULL,
@@ -974,7 +1038,7 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
   res.status(201).json(result);
 }));
 
-app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
+app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(async (_req,res) => {
   const orderRows=await pool.query(`SELECT o.id order_id,o.order_number,o.status,i.product_id,
     GREATEST(0,LEAST(i.required_qty-COALESCE(sh.shipped,0),
       COALESCE(prod.produced,0)-COALESCE(sh.shipped,0)))::int AS available,
@@ -1033,7 +1097,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
