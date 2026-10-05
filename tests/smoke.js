@@ -23,6 +23,7 @@ async function must(path, options, expected=200) {
   await must('/api/auth/recovery/complete',{method:'POST',body:{code:'12345678',newPin:'12'}},400);
   const adminLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:String(2500+5)}});
   const admin=adminLogin.token;
+  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
   const brigadier=brigadierLogin.token;
   await must('/api/auth/recovery/request',{method:'POST',body:{}},409);
   await must('/api/dashboard',{token:admin});
@@ -107,7 +108,6 @@ async function must(path, options, expected=200) {
   const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
   assert.equal(closedProduction.status,400);
 
-  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
   await must('/api/fund',{token:brigadierLogin.token});
   const brigadierCannotCreateOrder=await request('/api/orders',{token:brigadierLogin.token,method:'POST',body:{orderNumber:'CI-FORBIDDEN',title:'Should be denied',items:[{productId:product.id,requiredQty:1}]}});
   assert.equal(brigadierCannotCreateOrder.status,403);
