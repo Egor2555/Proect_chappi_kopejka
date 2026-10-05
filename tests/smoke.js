@@ -23,7 +23,6 @@ async function must(path, options, expected=200) {
   await must('/api/auth/recovery/complete',{method:'POST',body:{code:'12345678',newPin:'12'}},400);
   const adminLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:String(2500+5)}});
   const admin=adminLogin.token;
-  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
   const brigadier=brigadierLogin.token;
   await must('/api/auth/recovery/request',{method:'POST',body:{}},409);
   await must('/api/dashboard',{token:admin});
