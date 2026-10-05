@@ -151,7 +151,10 @@ async function auth(req, res, next) {
     // Re-check every profile against the database on every request. This revokes
     // stale tokens immediately when an account is archived, disabled, or rebound.
     const session=(await pool.query('SELECT active,role,worker_id,last_activity_at FROM users WHERE id=$1',[req.user.sub])).rows[0];
-    if (!session || !session.active || session.role !== req.user.role ||
+    if (!session || !session.active || session.role !== req.user.role) throw new Error('inactive or stale profile');
+    // Worker tokens are bound to their worker record. Admin/brigadier profiles
+    // are shared access profiles and intentionally have no worker binding.
+    if (req.user.role === 'worker' &&
         String(session.worker_id || '') !== String(req.user.workerId || '')) throw new Error('inactive or stale profile');
     if (['admin','brigadier'].includes(req.user.role)) {
       if (session.last_activity_at && Date.now() - new Date(session.last_activity_at).getTime() > 30*60*1000) {
