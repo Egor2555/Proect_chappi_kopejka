@@ -211,7 +211,7 @@ async function production(){
  };
  if(report.exists){
    document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.checklist input').forEach(x=>x.disabled=true);
-   const result='<div class="card success"><h2>Отчёт за день внесён</h2>'+report.items.map(x=>'<p><strong>'+formatProduct(x)+'</strong> — '+x.quantity+' шт.</p>').join('')+'<button id="editDaily" type="button" class="danger">Изменить</button></div>';
+   const result='<div class="card success"><h2>'+((report.items||[]).length?'Отчёт за день внесён':'🟢 В РАБОТЕ — производства не было')+'</h2>'+report.items.map(x=>'<p><strong>'+formatProduct(x)+'</strong> — '+x.quantity+' шт.</p>').join('')+'<button id="editDaily" type="button" class="danger">Изменить</button></div>';
    $('#dailyResult').innerHTML=result;
    $('#editDaily').onclick=()=>{
      document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.checklist input').forEach(x=>x.disabled=false);
