@@ -42,6 +42,34 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
+  await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
+  await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS daily_report_id UUID REFERENCES daily_production_reports(id) ON DELETE RESTRICT');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_production_daily_report ON production_entries(daily_report_id)');
+  await pool.query('ALTER TABLE shipments ADD COLUMN IF NOT EXISTS payroll_month DATE');
+  await pool.query("UPDATE shipments SET payroll_month=date_trunc('month',shipped_at)::date WHERE payroll_month IS NULL");
+  await pool.query("ALTER TABLE shipments ALTER COLUMN payroll_month SET DEFAULT date_trunc('month',CURRENT_TIMESTAMP)::date");
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_shipments_payroll_month ON shipments(payroll_month)');
+  await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    work_date DATE NOT NULL,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(work_date,team_id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS month_states (
+    period_month DATE PRIMARY KEY,
+    brigadier_closed_at TIMESTAMPTZ,
+    brigadier_closed_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    reopened_at TIMESTAMPTZ,
+    reopened_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    finalized_at TIMESTAMPTZ,
+    finalized_by UUID REFERENCES users(id) ON DELETE RESTRICT
+  )`);
   await pool.query(`CREATE TABLE IF NOT EXISTS admin_recovery_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -346,14 +374,17 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
 }));
 
 app.get('/api/products', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query('SELECT *, length_mm / 1000.0 AS length_m FROM products ORDER BY length_mm');
+  const r=await pool.query("SELECT *, length_mm / 1000.0 AS length_m, COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') AS length_label FROM products ORDER BY length_mm");
   res.json(r.rows);
 }));
 app.post('/api/products', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {code,lengthM,sectionWidthMm=60,sectionHeightMm=40}=req.body;
-  const lengthMeters=Number(lengthM); const lengthMm=Math.round(lengthMeters*1000); if (!code || !Number.isFinite(lengthMeters) || lengthMeters<=0 || lengthMm<=0) return res.status(400).json({error:'Проверьте код и длину в метрах'});
-  const r=await pool.query('INSERT INTO products(code,length_mm,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4) RETURNING *',
-    [code,lengthMm,Number(sectionWidthMm),Number(sectionHeightMm)]);
+  const {code,lengthM,lengthLabel,sectionWidthMm=60,sectionHeightMm=40}=req.body;
+  const lengthMeters=Number(lengthM);
+  const label=String(lengthLabel||'').trim();
+  const lengthMm=Number.isFinite(lengthMeters)&&lengthMeters>0?Math.round(lengthMeters*1000):null;
+  if(!code || !label || !Number.isInteger(lengthMm) || lengthMm<=0) return res.status(400).json({error:'Укажите код, числовую длину для расчётов и текстовое обозначение длины'});
+  const r=await pool.query('INSERT INTO products(code,length_mm,length_label,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4,$5) RETURNING *',
+    [code,lengthMm,label,Number(sectionWidthMm),Number(sectionHeightMm)]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','product',$2,$3)",[req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
   res.status(201).json(r.rows[0]);
 }));
@@ -368,7 +399,7 @@ app.patch('/api/products/:id/archive', auth, roles('admin'), asyncRoute(async (r
 }));
 
 app.get('/api/workers', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT w.id,w.display_name,w.active,t.name AS team_name
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier,t.name AS team_name
     FROM workers w LEFT JOIN LATERAL (SELECT tm.name FROM team_memberships m JOIN teams tm ON tm.id=m.team_id
       WHERE m.worker_id=w.id AND m.valid_to IS NULL ORDER BY m.valid_from DESC LIMIT 1) t ON true
     ORDER BY w.display_name`);
@@ -438,7 +469,7 @@ app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!team) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=team.id;
-  const r=await pool.query(`SELECT w.id,w.display_name,w.active
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier
     FROM workers w JOIN team_memberships m ON m.worker_id=w.id
     WHERE m.team_id=$1 AND m.valid_from<=$2 AND (m.valid_to IS NULL OR m.valid_to>=$2)
     ORDER BY w.display_name`,[teamId,date]);
@@ -462,7 +493,105 @@ app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
   res.status(409).json({error:'В Chappi Edition предусмотрен только один коллектив. Его название не создаётся повторно.'});
 }));
 
-app.post('/api/attendance', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+
+app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const workerId=String(req.params.id);
+  const result=await tx(async c=>{
+    const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
+    if(!w) throw new Error('Работник не найден или архивирован');
+    await c.query('UPDATE workers SET is_brigadier=false WHERE is_brigadier=true');
+    const updated=(await c.query('UPDATE workers SET is_brigadier=true WHERE id=$1 RETURNING *',[workerId])).rows[0];
+    const brig=(await c.query("SELECT id FROM users WHERE role='brigadier' AND active=true LIMIT 1")).rows[0];
+    if(brig) await c.query('UPDATE users SET worker_id=$1 WHERE id=$2',[workerId,brig.id]);
+    await audit(c,req.user.sub,'assign_brigadier','worker',workerId,null,updated);
+    return updated;
+  });
+  res.json(result);
+}));
+
+app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async (req,res) => {
+  const date=String(req.query.date||'');
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
+  const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+  if(!team) throw new Error('Коллектив не настроен');
+  const report=(await pool.query('SELECT * FROM daily_production_reports WHERE work_date=$1 AND team_id=$2',[date,team.id])).rows[0]||null;
+  if(!report) return res.json({exists:false,workDate:date,items:[],workerIds:[]});
+  const items=(await pool.query(`SELECT pe.id,pe.product_id,pe.quantity,p.code,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+      COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
+    FROM production_entries pe JOIN products p ON p.id=pe.product_id
+    WHERE pe.daily_report_id=$1 AND pe.voided_at IS NULL ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`,[report.id])).rows;
+  const workers=(await pool.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2 ORDER BY worker_id',[date,team.id])).rows.map(x=>x.worker_id);
+  res.json({exists:true,id:report.id,workDate:date,items,workerIds:workers});
+}));
+
+app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  const {workDate,items=[],workerIds=[]}=req.body;
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!items.length||!Array.isArray(workerIds))
+    return res.status(400).json({error:'Укажите дату, изготовленные типоразмеры и работавших людей'});
+  const result=await tx(async c=>{
+    const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
+    if(!team) throw new Error('Коллектив не настроен');
+    const month=String(workDate).slice(0,7)+'-01';
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Месяц уже рассчитан и окончательно закрыт');
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:daily-report:' || $1 || ':' || $2))",[workDate,team.id]);
+    const brig=(await c.query('SELECT id FROM workers WHERE is_brigadier=true AND active=true LIMIT 1')).rows[0];
+    if(!brig) throw new Error('Администратор ещё не назначил бригадира');
+    if(workerIds.some(id=>String(id)===String(brig.id))) throw new Error('Бригадир не участвует в зарплатном составе');
+    for(const workerId of workerIds){
+      const ok=(await c.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3) AND EXISTS (SELECT 1 FROM workers WHERE id=$1 AND active=true AND is_brigadier=false)',[workerId,team.id,workDate])).rowCount;
+      if(!ok) throw new Error('В списке есть работник, который не состоит в коллективе на эту дату');
+    }
+    if(!workerIds.length) throw new Error('Отметьте хотя бы одного работника');
+    const products=(await c.query('SELECT id FROM products WHERE active=true')).rows.map(x=>String(x.id));
+    for(const item of items){
+      const pid=String(item.productId||''), qty=Number(item.quantity);
+      if(!products.includes(pid)||!Number.isInteger(qty)||qty<=0) throw new Error('Недопустимый типоразмер или количество');
+    }
+    let report=(await c.query('SELECT * FROM daily_production_reports WHERE work_date=$1 AND team_id=$2 FOR UPDATE',[workDate,team.id])).rows[0]||null;
+    if(report){
+      const shipped=(await c.query(`SELECT COUNT(*)::int n FROM shipment_allocations sa JOIN inventory_movements im ON im.id=sa.inventory_movement_id
+        JOIN production_entries pe ON pe.id=im.production_entry_id WHERE pe.daily_report_id=$1`,[report.id])).rows[0].n;
+      if(Number(shipped)>0) throw new Error('Отчёт нельзя изменить: его продукция уже попала в отправку');
+      const oldEntries=(await c.query('SELECT * FROM production_entries WHERE daily_report_id=$1 AND voided_at IS NULL FOR UPDATE',[report.id])).rows;
+      for(const oldEntry of oldEntries){
+        const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id])).rows.map(x=>x.order_id).filter(Boolean);
+        const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[oldEntry.id])).rows;
+        for(const movement of movements){
+          const reverse=-Number(movement.quantity_delta);
+          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
+            VALUES($1,$2,$3,$4,$5,$6,'Сторно при редактировании дневного отчёта')`,
+            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id, movement.order_id,req.user.sub]);
+        }
+        await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id]);
+        for(const orderId of affectedOrders){
+          const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
+            COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
+          if(Number(missing)>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
+        }
+        await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1',[oldEntry.id,'Редактирование дневного отчёта бригадиром']);
+      }
+      await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,team.id]);
+      await c.query('UPDATE daily_production_reports SET updated_at=now(),created_by=$2 WHERE id=$1',[report.id,req.user.sub]);
+    } else {
+      report=(await c.query('INSERT INTO daily_production_reports(work_date,team_id,created_by) VALUES($1,$2,$3) RETURNING *',[workDate,team.id,req.user.sub])).rows[0];
+    }
+    for(const workerId of workerIds)
+      await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4)',[workDate,team.id,workerId,req.user.sub]);
+    const created=[];
+    for(const item of items){
+      const p=(await c.query('SELECT * FROM products WHERE id=$1',[item.productId])).rows[0];
+      const pe=(await c.query(`INSERT INTO production_entries(work_date,team_id,product_id,order_id,quantity,rate_id,rate_snapshot_minor,total_minor,note,created_by,daily_report_id)
+        VALUES($1,$2,$3,NULL,$4,NULL,NULL,0,'', $5,$6) RETURNING *`,[workDate,team.id,item.productId,Number(item.quantity),req.user.sub,report.id])).rows[0];
+      const distribution=await autoAllocateProductionToOrders(c,pe,req.user.sub);
+      created.push({...pe,product:p,distribution});
+    }
+    await audit(c,req.user.sub,'save_daily_report','daily_production_report',report.id,null,{workDate,items,workerIds});
+    return {id:report.id,workDate,items:created,workerIds};
+  });
+  res.status(201).json(result);
+}));
+
+app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {workDate,workerIds=[]}=req.body;
   if(!workDate||!Array.isArray(workerIds)) return res.status(400).json({error:'Недостаточно данных'});
   const singleTeam=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
@@ -501,8 +630,11 @@ app.post('/api/rates', auth, roles('admin'), asyncRoute(async (req,res) => {  co
   if(!productId||!/^\d{4}-\d{2}-01$/.test(periodMonth||'')||!Number.isSafeInteger(Number(amountMinor))||Number(amountMinor)<0)
     return res.status(400).json({error:'Проверьте изделие, месяц и сумму в копейках'});
   const result=await tx(async c=>{
-    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount)
-      throw new Error('Нельзя менять расценку закрытого месяца');
+    const ms=(await c.query('SELECT * FROM month_states WHERE period_month=$1',[periodMonth])).rows[0];
+    if(!ms?.brigadier_closed_at || ms.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[periodMonth])).rowCount) throw new Error('Месяц уже окончательно рассчитан');
+    if(!(await c.query('SELECT 1 FROM shipments WHERE payroll_month=$1 AND EXISTS (SELECT 1 FROM shipment_items si WHERE si.shipment_id=shipments.id AND si.product_id=$2) LIMIT 1',[periodMonth,productId])).rowCount)
+      throw new Error('Цена нужна только для типоразмеров, которые были отправлены в этом месяце');
     const before=(await c.query('SELECT * FROM rates WHERE product_id=$1 AND period_month=$2',[productId,periodMonth])).rows[0]||null;
     const after=(await c.query(`INSERT INTO rates(product_id,period_month,amount_minor,created_by)
       VALUES($1,$2,$3,$4) ON CONFLICT(product_id,period_month) DO UPDATE SET amount_minor=EXCLUDED.amount_minor,created_by=EXCLUDED.created_by
@@ -630,7 +762,7 @@ async function autoAllocateFreeStockToOrder(c, orderId, userId) {
       if(!available) continue;
       const move=Math.min(left,available);
       await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
-        VALUES($1,$2,$3,$4,'warehouse_auto')`,[batch.production_entry_id,orderId,item.product_id,move]);
+        VALUES($1,$2,$3,$4,'warehouse')`,[batch.production_entry_id,orderId,item.product_id,move]);
       await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
         VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическая выдача свободного остатка со склада в заказ')`,
         [item.product_id,-move,batch.production_entry_id,orderId,batch.id,userId]);
@@ -662,7 +794,8 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
     if(!need) continue;
     const move=Math.min(need,remaining);
     await c.query(`INSERT INTO production_allocations(production_entry_id,order_id,product_id,quantity,allocation_type)
-      VALUES($1,$2,$3,$4,'automatic')`,[productionEntry.id,candidate.id,productionEntry.product_id,move]);
+      VALUES($1,$2,$3,$4,$5)`,[productionEntry.id,candidate.id,productionEntry.product_id,move,
+        candidate.status==='active' ? 'direct' : 'surplus']);
     await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
       VALUES($1,'adjustment_out',$2,$3,$4,$5,$6,'Автоматическое распределение производства по очереди заказов')`,
       [productionEntry.product_id,-move,productionEntry.id,candidate.id,movement.id,userId]);
@@ -685,7 +818,7 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
   return {allocations,stockRemaining:remaining};
 }
 
-app.post('/api/production', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/production', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {workDate,productId,quantity,note=''}=req.body;
   if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
     return res.status(400).json({error:'Проверьте дату, изделие и количество'});
@@ -831,6 +964,26 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
   res.status(201).json(result);
 }));
 
+app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
+  const orderRows=await pool.query(`SELECT o.id order_id,o.order_number,o.status,i.product_id,
+    GREATEST(0,LEAST(i.required_qty-COALESCE(sh.shipped,0),
+      COALESCE(prod.produced,0)-COALESCE(sh.shipped,0)))::int AS available,
+    p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
+    FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
+    LEFT JOIN LATERAL(SELECT SUM(quantity)::int produced FROM production_allocations WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL) prod ON true
+    LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si JOIN shipments s ON s.id=si.shipment_id WHERE s.order_id=o.id AND si.product_id=i.product_id) sh ON true
+    WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
+  const stockRows=await pool.query(`SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
+    GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
+    FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
+    WHERE p.active=true GROUP BY p.id ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`);
+  const orderItems=orderRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
+  const stockItems=stockRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
+  res.json({orderItems,stockItems});
+}));
+
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('length_m',p.length_mm / 1000.0,'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
     FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
@@ -870,7 +1023,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
@@ -878,17 +1031,19 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
     // could pass the "open month" check while close-month freezes its snapshot.
     const currentMonthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
-    const closedMonth=(await c.query(`SELECT 1 FROM monthly_closures
-      WHERE period_month=date_trunc('month',(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date)`)).rowCount>0;
-    if(closedMonth) throw new Error('Текущий месяц уже закрыт. Новые отгрузки запрещены.');
+    const monthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
+    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[monthStart])).rows[0]||null;
+    const payrollMonth=(monthState?.brigadier_closed_at && !monthState?.reopened_at) ? new Date(Date.UTC(Number(monthStart.slice(0,4)),Number(monthStart.slice(5,7)),1)) : new Date(monthStart+'T00:00:00Z');
+    if(monthState?.finalized_at) payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
+    const payrollMonthText=payrollMonth.toISOString().slice(0,7)+'-01';
     if(orderId){
       const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
       if(!order) throw new Error('Заказ не найден');
       if(['cancelled','archived'].includes(order.status))
         throw new Error('Отменённый или архивный заказ нельзя отгружать');
     }
-    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',
-      [shipmentNumber,orderId,recipient,note,req.user.sub])).rows[0];
+    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+      [shipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
     for(const item of items){
       const qty=Number(item.quantity);
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
@@ -900,8 +1055,10 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
             WHERE s2.order_id=i.order_id AND si2.product_id=i.product_id),0) shipped
           FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[orderId,item.productId])).rows[0];
         if(!orderItem) throw new Error('В выбранном заказе нет такого типоразмера');
-        const orderRemaining=Math.max(0,Number(orderItem.required_qty)-Number(orderItem.shipped));
-        if(qty>orderRemaining) throw new Error('Отгрузка превышает остаток выбранной позиции заказа: '+orderRemaining+' шт.');
+        const producedForOrder=Number((await c.query(`SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations
+          WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[orderId,item.productId])).rows[0].qty);
+        const orderRemaining=Math.max(0,Math.min(Number(orderItem.required_qty)-Number(orderItem.shipped),producedForOrder-Number(orderItem.shipped)));
+        if(qty>orderRemaining) throw new Error('Отгрузка превышает изготовленный доступный остаток выбранной позиции: '+orderRemaining+' шт.');
       }
       const stock=(await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty;
       if(stock<qty) throw new Error('На складе недостаточно продукции выбранной длины');
@@ -983,6 +1140,43 @@ app.post('/api/payments', auth, roles('admin'), asyncRoute(async (req,res) => {
     return payment;
   });
   res.status(201).json(result);
+}));
+
+
+function nextMonthStart(monthStart){ const d=new Date(String(monthStart)+'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth()+1); return d.toISOString().slice(0,10); }
+
+app.get('/api/month/state', auth, asyncRoute(async (req,res) => {
+  const month=String(req.query.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const state=(await pool.query('SELECT * FROM month_states WHERE period_month=$1',[month])).rows[0]||null;
+  const finalized=(await pool.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount>0;
+  res.json({month,brigadierClosed:!!state?.brigadier_closed_at&&!state?.reopened_at,finalized:finalized||!!state?.finalized_at});
+}));
+
+app.post('/api/month/close', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  const month=String(req.body.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[month]);
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Месяц уже окончательно рассчитан администратором');
+    const existing=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[month])).rows[0];
+    if(existing?.brigadier_closed_at && !existing?.reopened_at) return existing;
+    return (await c.query(`INSERT INTO month_states(period_month,brigadier_closed_at,brigadier_closed_by,reopened_at,reopened_by)
+      VALUES($1,now(),$2,NULL,NULL)
+      ON CONFLICT(period_month) DO UPDATE SET brigadier_closed_at=now(),brigadier_closed_by=EXCLUDED.brigadier_closed_by,reopened_at=NULL,reopened_by=NULL
+      RETURNING *`,[month,req.user.sub])).rows[0];
+  });
+  res.status(201).json(result);
+}));
+
+app.post('/api/month/reopen', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  const month=String(req.body.month||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date()))+'-01';
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[month]);
+    if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('После расчёта администратором месяц продолжить нельзя');
+    const state=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[month])).rows[0];
+    if(!state?.brigadier_closed_at || state.reopened_at) return state||null;
+    return (await c.query(`UPDATE month_states SET reopened_at=now(),reopened_by=$2 WHERE period_month=$1 RETURNING *`,[month,req.user.sub])).rows[0];
+  });
+  res.json(result||{});
 }));
 
 app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
@@ -1085,8 +1279,10 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
   try {
     result=await tx(async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[start]);
+    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[start])).rows[0];
+    if(!monthState?.brigadier_closed_at || monthState.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
-      throw new Error('Этот месяц уже закрыт');
+      throw new Error('Этот месяц уже окончательно закрыт');
     const items=(await c.query(`SELECT p.id,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
       COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
@@ -1171,6 +1367,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
       [start,JSON.stringify(snapshot),req.user.sub])).rows[0];
+    await c.query('UPDATE month_states SET finalized_at=now(),finalized_by=$2 WHERE period_month=$1',[start,req.user.sub]);
     await audit(c,req.user.sub,'close_month','monthly_closure',closure.id,null,snapshot);
     return closure;
     });

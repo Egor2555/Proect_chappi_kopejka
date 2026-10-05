@@ -23,6 +23,8 @@ async function must(path, options, expected=200) {
   await must('/api/auth/recovery/complete',{method:'POST',body:{code:'12345678',newPin:'12'}},400);
   const adminLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:String(2500+5)}});
   const admin=adminLogin.token;
+  const brigadierLogin=await must('/api/auth/login',{method:'POST',body:{profile:'brigadier',pin:'1111'}});
+  const brigadier=brigadierLogin.token;
   await must('/api/auth/recovery/request',{method:'POST',body:{}},409);
   await must('/api/dashboard',{token:admin});
   const products=await must('/api/products',{token:admin});
@@ -43,16 +45,17 @@ async function must(path, options, expected=200) {
   const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
   const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[worker.id,workerC.id]}});
-  await must('/api/attendance',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[worker.id,workerS.id,workerC.id]}});
-  const attendance=await must('/api/attendance?date='+today,{token:admin});
+  await must('/api/workers/'+worker.id+'/brigadier',{token:admin,method:'PATCH',body:{}},200);
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[workerS.id,workerC.id]}});
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[workerC.id]}});
+  await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,workerIds:[workerS.id,workerC.id]}});
+  const attendance=await must('/api/attendance?date='+today,{token:brigadier});
   assert.equal(attendance.length,3);
 
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
   const orderB=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-B',title:'CI surplus order',priority:2,items:[{productId:product.id,requiredQty:1}]}},201);
 
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
   const orders=await must('/api/orders',{token:admin});
   assert.equal(orders.find(o=>o.id===orderA.id).status,'completed');
   assert.equal(orders.find(o=>o.id===orderB.id).status,'completed');
@@ -61,19 +64,19 @@ async function must(path, options, expected=200) {
   const stock=await must('/api/stock',{token:admin});
   assert.equal(stock.find(x=>x.id===product.id).quantity,3);
 
-  await must('/api/shipments',{token:admin,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
+  await must('/api/shipments',{token:brigadier,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
   const stockAfter=await must('/api/stock',{token:admin});
   assert.equal(stockAfter.find(x=>x.id===product.id).quantity,1);
-  const shipments=await must('/api/shipments',{token:admin});
+  const shipments=await must('/api/shipments',{token:brigadier});
   assert.equal(shipments.length,1);
   await must('/api/payments',{token:admin,method:'POST',body:{shipmentId:shipments[0].id,amountMinor:250,note:'CI credited'}},201);
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
   const productionHistory=await must('/api/production?date='+day1,{token:admin});
   assert.equal(productionHistory.length,2);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
@@ -92,6 +95,7 @@ async function must(path, options, expected=200) {
 
   await must('/api/orders/'+orderA.id+'/archive',{token:admin,method:'PATCH',body:{}});
   await must('/api/orders/'+orderB.id+'/archive',{token:admin,method:'PATCH',body:{}});
+  await must('/api/month/close',{token:brigadier,method:'POST',body:{month:today.slice(0,7)}},201);
   await must('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}},201);
   const duplicateClose=await request('/api/reports/close-month',{token:admin,method:'POST',body:{month:today.slice(0,7)}});
   assert.equal(duplicateClose.status,400);
