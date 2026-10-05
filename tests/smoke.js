@@ -55,7 +55,7 @@ async function must(path, options, expected=200) {
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
   const orderB=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-B',title:'CI surplus order',priority:2,items:[{productId:product.id,requiredQty:1}]}},201);
 
-  await must('/api/production',{token:admin,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
+  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
   const orders=await must('/api/orders',{token:admin});
   assert.equal(orders.find(o=>o.id===orderA.id).status,'completed');
   assert.equal(orders.find(o=>o.id===orderB.id).status,'completed');
