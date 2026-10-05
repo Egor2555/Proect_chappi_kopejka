@@ -42,6 +42,34 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ');
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ');
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
+  await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
+  await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
+  await pool.query('ALTER TABLE production_entries ADD COLUMN IF NOT EXISTS daily_report_id UUID REFERENCES daily_production_reports(id) ON DELETE RESTRICT');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_production_daily_report ON production_entries(daily_report_id)');
+  await pool.query('ALTER TABLE shipments ADD COLUMN IF NOT EXISTS payroll_month DATE');
+  await pool.query("UPDATE shipments SET payroll_month=date_trunc('month',shipped_at)::date WHERE payroll_month IS NULL");
+  await pool.query("ALTER TABLE shipments ALTER COLUMN payroll_month SET DEFAULT date_trunc('month',CURRENT_TIMESTAMP)::date");
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_shipments_payroll_month ON shipments(payroll_month)');
+  await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    work_date DATE NOT NULL,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(work_date,team_id)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS month_states (
+    period_month DATE PRIMARY KEY,
+    brigadier_closed_at TIMESTAMPTZ,
+    brigadier_closed_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    reopened_at TIMESTAMPTZ,
+    reopened_by UUID REFERENCES users(id) ON DELETE RESTRICT,
+    finalized_at TIMESTAMPTZ,
+    finalized_by UUID REFERENCES users(id) ON DELETE RESTRICT
+  `);
   await pool.query(`CREATE TABLE IF NOT EXISTS admin_recovery_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -346,14 +374,17 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
 }));
 
 app.get('/api/products', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query('SELECT *, length_mm / 1000.0 AS length_m FROM products ORDER BY length_mm');
+  const r=await pool.query("SELECT *, length_mm / 1000.0 AS length_m, COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') AS length_label FROM products ORDER BY length_mm");
   res.json(r.rows);
 }));
 app.post('/api/products', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {code,lengthM,sectionWidthMm=60,sectionHeightMm=40}=req.body;
-  const lengthMeters=Number(lengthM); const lengthMm=Math.round(lengthMeters*1000); if (!code || !Number.isFinite(lengthMeters) || lengthMeters<=0 || lengthMm<=0) return res.status(400).json({error:'Проверьте код и длину в метрах'});
-  const r=await pool.query('INSERT INTO products(code,length_mm,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4) RETURNING *',
-    [code,lengthMm,Number(sectionWidthMm),Number(sectionHeightMm)]);
+  const {code,lengthM,lengthLabel,sectionWidthMm=60,sectionHeightMm=40}=req.body;
+  const lengthMeters=Number(lengthM);
+  const label=String(lengthLabel||'').trim();
+  const lengthMm=Number.isFinite(lengthMeters)&&lengthMeters>0?Math.round(lengthMeters*1000):null;
+  if(!code || !label || !Number.isInteger(lengthMm) || lengthMm<=0) return res.status(400).json({error:'Укажите код, числовую длину для расчётов и текстовое обозначение длины'});
+  const r=await pool.query('INSERT INTO products(code,length_mm,length_label,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4,$5) RETURNING *',
+    [code,lengthMm,label,Number(sectionWidthMm),Number(sectionHeightMm)]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','product',$2,$3)",[req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
   res.status(201).json(r.rows[0]);
 }));
@@ -368,7 +399,7 @@ app.patch('/api/products/:id/archive', auth, roles('admin'), asyncRoute(async (r
 }));
 
 app.get('/api/workers', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT w.id,w.display_name,w.active,t.name AS team_name
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier,t.name AS team_name
     FROM workers w LEFT JOIN LATERAL (SELECT tm.name FROM team_memberships m JOIN teams tm ON tm.id=m.team_id
       WHERE m.worker_id=w.id AND m.valid_to IS NULL ORDER BY m.valid_from DESC LIMIT 1) t ON true
     ORDER BY w.display_name`);
@@ -438,7 +469,7 @@ app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!team) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=team.id;
-  const r=await pool.query(`SELECT w.id,w.display_name,w.active
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier
     FROM workers w JOIN team_memberships m ON m.worker_id=w.id
     WHERE m.team_id=$1 AND m.valid_from<=$2 AND (m.valid_to IS NULL OR m.valid_to>=$2)
     ORDER BY w.display_name`,[teamId,date]);
