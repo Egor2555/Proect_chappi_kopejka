@@ -969,7 +969,7 @@ app.post('/api/orders/:id/warehouse-assign', auth, roles('admin','brigadier'), a
   res.status(201).json(result);
 }));
 
-app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(async (_req,res) => {
+app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
   const orderRows=await pool.query(`SELECT o.id order_id,o.order_number,o.status,i.product_id,
     GREATEST(0,LEAST(i.required_qty-COALESCE(sh.shipped,0),
       COALESCE(prod.produced,0)-COALESCE(sh.shipped,0)))::int AS available,
@@ -1028,7 +1028,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
   const shipment=await tx(async c=>{
