@@ -1144,8 +1144,8 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
 }));
 
 app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
-  const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
-  if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
+  const {orderId=null,recipient='',note='',items=[]}=req.body;
+  if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
   const shipmentProductIds=items.map(item=>String(item?.productId||''));
   if(shipmentProductIds.some(id=>!id) || new Set(shipmentProductIds).size!==shipmentProductIds.length)
     return res.status(400).json({error:'В одной отгрузке один типоразмер можно указать только один раз'});
@@ -1169,8 +1169,9 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
       if(['cancelled','archived','closed'].includes(order.status))
         throw new Error('Отменённый, полностью отгруженный или архивный заказ нельзя отгружать');
     }
+    const generatedShipmentNumber=(await c.query("SELECT 'ОТГ-' || to_char(clock_timestamp(),'YYYYMMDDHH24MISSMS') || '-' || upper(substr(md5(random()::text),1,4)) AS number")).rows[0].number;
     const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
-      [shipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
+      [generatedShipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
     for(const item of items){
       const qty=Number(item.quantity);
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
