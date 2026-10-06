@@ -41,6 +41,7 @@ async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hid
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';return Number(n.toFixed(3)).toString()+' м'}
+function formatProductLength(p){return escapeHtml(p?.length_label||formatLength(p?.length_m))}
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+' · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
