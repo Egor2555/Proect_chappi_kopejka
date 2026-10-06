@@ -162,7 +162,7 @@ function orderCards(rows,editable=false){
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled','closed'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
     const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':'⚪ В ОЧЕРЕДИ'):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='closed'?'🔒 ЗАКРЫТ':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
-    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br>(o.priority>0?'<span class="tag green">Приоритет '+o.priority+'</span>':'')</div><span>'+status+'</span></div><div class="order-table"><div class="order-table-head"><span>Типоразмер</span><span>Нужно</span><span>Сделано</span><span>Осталось</span></div>'+items+'</div>'+activate+priority+cancel+archive+'</div>';
+    return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br>'+(o.priority>0?'<span class="tag green">Приоритет '+o.priority+'</span>':'')+'</div><span>'+status+'</span></div><div class="order-table"><div class="order-table-head"><span>Типоразмер</span><span>Нужно</span><span>Сделано</span><span>Осталось</span></div>'+items+'</div>'+activate+priority+cancel+archive+'</div>';
   }).join('');
 }
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
