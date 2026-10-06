@@ -1082,25 +1082,68 @@ app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
 }));
 
 app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
-  const orderRows=await pool.query(`SELECT o.id order_id,o.order_number,o.status,i.product_id,
-    GREATEST(0,LEAST(i.required_qty-COALESCE(sh.shipped,0),
-      COALESCE(prod.produced,0)-COALESCE(sh.shipped,0)))::int AS available,
-    p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
-    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
-    FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
-    LEFT JOIN LATERAL(SELECT SUM(quantity)::int produced FROM production_allocations WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL) prod ON true
-    LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si WHERE si.order_id=o.id AND si.product_id=i.product_id) sh ON true
-    WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,o.id ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
-  const stockRows=await pool.query(`SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
-    COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
-    GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
+  const orderRows=await pool.query(`
+    SELECT o.id order_id,o.order_number,o.status,i.product_id,i.required_qty,
+      COALESCE(sh.shipped,0)::int shipped,
+      COALESCE(prod.produced,0)::int produced,
+      COALESCE(resv.reserved_available,0)::int reserved_available,
+      p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+      COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
+    FROM orders o
+    JOIN order_items i ON i.order_id=o.id
+    JOIN products p ON p.id=i.product_id
+    LEFT JOIN LATERAL(
+      SELECT SUM(quantity)::int produced
+      FROM production_allocations
+      WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
+    ) prod ON true
+    LEFT JOIN LATERAL(
+      SELECT SUM(si.quantity)::int shipped
+      FROM shipment_items si
+      WHERE si.order_id=o.id AND si.product_id=i.product_id
+    ) sh ON true
+    LEFT JOIN LATERAL(
+      SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((
+        SELECT SUM(sa.quantity) FROM shipment_allocations sa
+        WHERE sa.reservation_movement_id=r.id
+      ),0)),0)::int reserved_available
+      FROM inventory_movements r
+      WHERE r.product_id=i.product_id AND r.order_id=o.id
+        AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
+    ) resv ON true
+    WHERE o.status IN ('active','queued')
+    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
+      o.priority DESC,o.created_at ASC,o.id ASC,
+      p.section_width_mm,p.section_height_mm,p.length_mm
+  `);
+  const byProduct=new Map();
+  for(const x of orderRows.rows){
+    const available=Math.max(0,Math.min(
+      Number(x.required_qty)-Number(x.shipped),
+      Number(x.produced)-Number(x.shipped)+Number(x.reserved_available)
+    ));
+    if(available<=0) continue;
+    const key=String(x.product_id);
+    if(!byProduct.has(key)) byProduct.set(key,{productId:x.product_id,
+      section_width_mm:x.section_width_mm,section_height_mm:x.section_height_mm,
+      length_m:x.length_m,length_label:x.length_label,available:0});
+    byProduct.get(key).available+=available;
+  }
+  const stockRows=await pool.query(`
+    SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
+      COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
+      GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
     FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
-    WHERE p.active=true GROUP BY p.id ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`);
-  const orderItems=orderRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
-  const stockItems=stockRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
+    WHERE p.active=true
+    GROUP BY p.id ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm
+  `);
+  const orderItems=[...byProduct.values()]
+    .sort((a,b)=>a.section_width_mm-b.section_width_mm||a.section_height_mm-b.section_height_mm||a.length_m-b.length_m)
+    .map(x=>({...x,label:x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label}));
+  const stockItems=stockRows.rows.filter(x=>Number(x.available)>0)
+    .map(x=>({...x,label:x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label}));
   res.json({orderItems,stockItems});
-}));
-app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
+}));app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object(
       'order_id',i.order_id,'order_number',o.order_number,
       'section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,
@@ -1151,107 +1194,146 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
 }));
 
 app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
-  const {orderIds=[],items=[]}=req.body;
-  const normalizedOrderIds=[...new Set((Array.isArray(orderIds)?orderIds:[]).map(String).filter(Boolean))];
-  if(!normalizedOrderIds.length) return res.status(400).json({error:'Отгрузка возможна только по заказу'});
+  const {items=[]}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
-  const keys=items.map(item=>String(item?.orderId||'warehouse')+':'+String(item?.productId||''));
-  if(keys.some(k=>k.endsWith(':')) || new Set(keys).size!==keys.length)
-    return res.status(400).json({error:'Одна позиция одного заказа или склада может быть указана только один раз'});
-  const itemOrderIds=[...new Set(items.map(x=>x?.orderId?String(x.orderId):null).filter(Boolean))];
-  if(itemOrderIds.some(id=>!normalizedOrderIds.includes(id)))
-    return res.status(400).json({error:'В отгрузке указан заказ, который не выбран'});
+  const normalized=items.map(item=>({
+    productId:String(item?.productId||''),
+    quantity:Number(item?.quantity),
+    source:item?.source==='warehouse'?'warehouse':'orders'
+  }));
+  if(normalized.some(x=>!x.productId||!Number.isInteger(x.quantity)||x.quantity<=0))
+    return res.status(400).json({error:'Проверьте позиции отгрузки'});
+  const keys=normalized.map(x=>x.source+':'+x.productId);
+  if(new Set(keys).size!==keys.length)
+    return res.status(400).json({error:'Один типоразмер нельзя указать дважды в одном источнике'});
   const shipment=await tx(async c=>{
     const currentMonthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
-    const monthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
-    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[monthStart])).rows[0]||null;
-    const payrollMonth=new Date(monthStart+'T00:00:00Z');
+    const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[currentMonthStart])).rows[0]||null;
+    const payrollMonth=new Date(currentMonthStart+'T00:00:00Z');
     if((monthState?.brigadier_closed_at && !monthState?.reopened_at) || monthState?.finalized_at)
       payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
     const payrollMonthText=payrollMonth.toISOString().slice(0,7)+'-01';
-    const orders=(await c.query('SELECT id,status FROM orders WHERE id=ANY($1::uuid[]) FOR UPDATE',[normalizedOrderIds])).rows;
-    if(orders.length!==normalizedOrderIds.length) throw new Error('Один из выбранных заказов не найден');
-    if(orders.some(o=>['cancelled','archived','closed'].includes(o.status)))
-      throw new Error('Отменённый, полностью отгруженный или архивный заказ нельзя отгружать');
     const generatedShipmentNumber=(await c.query("SELECT 'ОТГ-' || to_char(clock_timestamp(),'YYYYMMDDHH24MISSMS') || '-' || upper(substr(md5(random()::text),1,4)) AS number")).rows[0].number;
-    const headerOrderId=normalizedOrderIds.length===1?normalizedOrderIds[0]:null;
-    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
-      [generatedShipmentNumber,headerOrderId,'','',req.user.sub,payrollMonthText])).rows[0];
+    const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,NULL,$2,$3,$4,$5) RETURNING *',
+      [generatedShipmentNumber,'','',req.user.sub,payrollMonthText])).rows[0];
     const closedOrders=new Set();
-    for(const item of items){
-      const qty=Number(item.quantity);
-      const itemOrderId=item.orderId?String(item.orderId):null;
-      if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
-      if(itemOrderId&&!normalizedOrderIds.includes(itemOrderId)) throw new Error('Позиция относится к невыбранному заказу');
+
+    const allocateFreeInventory=async(productId,shipmentItemId,left,orderId)=>{
+      let freeTaken=0;
+      if(left<=0) return 0;
+      const batches=(await c.query(`SELECT m.id,m.production_entry_id,
+          (m.quantity_delta
+           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
+           -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+        FROM inventory_movements m
+        WHERE m.product_id=$1 AND (m.movement_type IN ('production_in','surplus_transfer')
+            OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
+          AND m.quantity_delta>0 ORDER BY m.created_at,m.id FOR UPDATE`,[productId])).rows;
+      for(const batch of batches){
+        if(left<=0) break;
+        const take=Math.min(left,Math.max(0,Number(batch.available)));
+        if(take<=0) continue;
+        await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
+          [shipmentItemId,batch.id,take]);
+        left-=take; freeTaken+=take;
+      }
+      if(freeTaken>0){
+        await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
+          VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,
+          [productId,-freeTaken,orderId,sh.id,req.user.sub,'Отгрузка '+generatedShipmentNumber]);
+      }
+      return left;
+    };
+
+    for(const item of normalized){
       await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.productId]);
-      if(itemOrderId){
-        const orderItem=(await c.query(`SELECT i.required_qty,
-          COALESCE((SELECT SUM(si2.quantity)::int FROM shipment_items si2 WHERE si2.order_id=i.order_id AND si2.product_id=i.product_id),0) shipped
-          FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[itemOrderId,item.productId])).rows[0];
-        if(!orderItem) throw new Error('В выбранном заказе нет такого типоразмера');
-        const producedForOrder=Number((await c.query(`SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations
-          WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[itemOrderId,item.productId])).rows[0].qty);
-        const orderRemaining=Math.max(0,Math.min(Number(orderItem.required_qty)-Number(orderItem.shipped),producedForOrder-Number(orderItem.shipped)));
-        if(qty>orderRemaining) throw new Error('Отгрузка превышает изготовленный доступный остаток выбранной позиции: '+orderRemaining+' шт.');
+      if(item.source==='warehouse'){
+        const stock=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty);
+        if(stock<item.quantity) throw new Error('Недостаточно продукции на складе для выбранного типоразмера: '+stock+' шт.');
+        const shipmentItem=(await c.query(
+          'INSERT INTO shipment_items(shipment_id,order_id,product_id,quantity) VALUES($1,NULL,$2,$3) RETURNING id',
+          [sh.id,item.productId,item.quantity])).rows[0];
+        const left=await allocateFreeInventory(item.productId,shipmentItem.id,item.quantity,null);
+        if(left>0) throw new Error('Часть складского остатка не имеет свободной производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
+        continue;
       }
-      const stock=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty);
-      let reservedAvailable=0;
-      if(itemOrderId){
-        reservedAvailable=Number((await c.query(`SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.reservation_movement_id=r.id),0)),0)::int qty
-          FROM inventory_movements r WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL`,[item.productId,itemOrderId])).rows[0].qty);
+
+      const orderRows=(await c.query(`
+        SELECT o.id,o.status,o.priority,o.created_at,i.required_qty,
+          COALESCE(sh.shipped,0)::int shipped,
+          COALESCE(prod.produced,0)::int produced,
+          COALESCE(resv.reserved_available,0)::int reserved_available
+        FROM orders o
+        JOIN order_items i ON i.order_id=o.id AND i.product_id=$1
+        LEFT JOIN LATERAL(
+          SELECT SUM(si.quantity)::int shipped FROM shipment_items si
+          WHERE si.order_id=o.id AND si.product_id=i.product_id
+        ) sh ON true
+        LEFT JOIN LATERAL(
+          SELECT SUM(quantity)::int produced FROM production_allocations
+          WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
+        ) prod ON true
+        LEFT JOIN LATERAL(
+          SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((
+            SELECT SUM(sa.quantity) FROM shipment_allocations sa
+            WHERE sa.reservation_movement_id=r.id
+          ),0)),0)::int reserved_available
+          FROM inventory_movements r
+          WHERE r.product_id=$1 AND r.order_id=o.id
+            AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
+        ) resv ON true
+        WHERE o.status IN ('active','queued')
+        ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
+          o.priority DESC,o.created_at ASC,o.id ASC
+        FOR UPDATE
+      `,[item.productId])).rows;
+
+      let left=item.quantity;
+      const allocations=[];
+      for(const order of orderRows){
+        if(left<=0) break;
+        const available=Math.max(0,Math.min(
+          Number(order.required_qty)-Number(order.shipped),
+          Number(order.produced)-Number(order.shipped)+Number(order.reserved_available)
+        ));
+        if(available<=0) continue;
+        const take=Math.min(left,available);
+        allocations.push({orderId:order.id,quantity:take});
+        left-=take;
       }
-      const totalAvailable=Math.max(0,stock)+Math.max(0,reservedAvailable);
-      if(totalAvailable<qty) throw new Error('Недостаточно доступной продукции выбранного типоразмера');
-      const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,order_id,product_id,quantity) VALUES($1,$2,$3,$4) RETURNING id',[sh.id,itemOrderId,item.productId,qty])).rows[0];
-      let left=qty;
-      if(itemOrderId){
+      if(left>0) throw new Error('Недостаточно доступной заказной продукции для '+item.productId+'. Доступно к отправке: '+(item.quantity-left)+' шт.');
+
+      for(const allocation of allocations){
+        const shipmentItem=(await c.query(
+          'INSERT INTO shipment_items(shipment_id,order_id,product_id,quantity) VALUES($1,$2,$3,$4) RETURNING id',
+          [sh.id,allocation.orderId,item.productId,allocation.quantity])).rows[0];
+        let remaining=allocation.quantity;
         const reserved=(await c.query(`SELECT r.id,r.reference_id,
             (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.reservation_movement_id=r.id),0))::int AS available
           FROM inventory_movements r
           WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
-          ORDER BY r.created_at,r.id FOR UPDATE`,[item.productId,itemOrderId])).rows;
+          ORDER BY r.created_at,r.id FOR UPDATE`,[item.productId,allocation.orderId])).rows;
         for(const reservation of reserved){
-          if(left<=0) break;
+          if(remaining<=0) break;
           const available=Math.max(0,Number(reservation.available));
           if(!available) continue;
-          const take=Math.min(left,available);
+          const take=Math.min(remaining,available);
           await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity,reservation_movement_id) VALUES($1,$2,$3,$4)',
             [shipmentItem.id,reservation.reference_id,take,reservation.id]);
-          left-=take;
+          remaining-=take;
         }
+        remaining=await allocateFreeInventory(item.productId,shipmentItem.id,remaining,allocation.orderId);
+        if(remaining>0) throw new Error('Не удалось связать всю отгрузку с производственными партиями.');
+        closedOrders.add(String(allocation.orderId));
       }
-      let freeTaken=0;
-      if(left>0){
-        const batches=(await c.query(`SELECT m.id,m.production_entry_id,
-            (m.quantity_delta
-             -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
-             -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
-          FROM inventory_movements m
-          WHERE m.product_id=$1 AND (m.movement_type IN ('production_in','surplus_transfer')
-              OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
-            AND m.quantity_delta>0 ORDER BY m.created_at,m.id FOR UPDATE`,[item.productId])).rows;
-        for(const batch of batches){
-          if(left<=0) break;
-          const take=Math.min(left,Math.max(0,Number(batch.available)));
-          if(take<=0) continue;
-          await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
-            [shipmentItem.id,batch.id,take]);
-          left-=take; freeTaken+=take;
-        }
-      }
-      if(left>0) throw new Error('Часть складского остатка не имеет свободной производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
-      if(freeTaken>0){
-        await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
-          VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,
-          [item.productId,-freeTaken,itemOrderId,sh.id,req.user.sub,'Отгрузка '+generatedShipmentNumber]);
-      }
-      if(itemOrderId) closedOrders.add(itemOrderId);
     }
+
     for(const orderId of closedOrders){
       const left=Number((await c.query(`SELECT COALESCE(SUM(GREATEST(i.required_qty-COALESCE(x.shipped,0),0)),0)::int qty
         FROM order_items i LEFT JOIN LATERAL (
-          SELECT SUM(si.quantity)::int shipped FROM shipment_items si WHERE si.order_id=i.order_id AND si.product_id=i.product_id
+          SELECT SUM(si.quantity)::int shipped FROM shipment_items si
+          WHERE si.order_id=i.order_id AND si.product_id=i.product_id
         ) x ON true WHERE i.order_id=$1`,[orderId])).rows[0].qty);
       if(left===0) await c.query("UPDATE orders SET status='closed',completed_at=COALESCE(completed_at,now()) WHERE id=$1",[orderId]);
     }
