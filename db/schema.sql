@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS attendance_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   work_date DATE NOT NULL,
   worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
+  was_brigadier BOOLEAN NOT NULL DEFAULT FALSE,
   team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
   created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
