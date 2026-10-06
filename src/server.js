@@ -56,6 +56,7 @@ async function ensureAccessProfiles() {
     CHECK (valid_to IS NULL OR valid_to >= valid_from)
   )`);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_worker_role_history_lookup ON worker_role_history(worker_id,valid_from,valid_to)');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS uq_worker_role_history_brigadier_day ON worker_role_history(valid_from) WHERE role=\'brigadier\'');
   await pool.query(`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM worker_role_history) THEN
       INSERT INTO worker_role_history(worker_id,role,valid_from,valid_to)
