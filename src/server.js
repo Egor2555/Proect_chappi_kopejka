@@ -464,7 +464,7 @@ app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (re
   if(before.is_brigadier) return res.status(400).json({error:'Нельзя архивировать текущего бригадира. Сначала назначьте нового бригадира.'});
   const after=(await pool.query('UPDATE workers SET active=false,is_brigadier=false,archived_at=now() WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
   await pool.query('UPDATE users SET active=false WHERE worker_id=$1',[req.params.id]);
-  await pool.query("UPDATE team_memberships SET valid_to=CASE WHEN valid_to IS NULL OR valid_to>CURRENT_DATE THEN CURRENT_DATE ELSE valid_to END WHERE worker_id=$1 AND valid_to IS NULL",[req.params.id]);
+  await pool.query("UPDATE team_memberships SET valid_to=CASE WHEN valid_to IS NULL OR valid_to>(CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date THEN (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Kyiv')::date ELSE valid_to END WHERE worker_id=$1 AND valid_to IS NULL",[req.params.id]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','worker',$2,$3,$4)",
     [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
   res.json(after);
@@ -496,6 +496,8 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
     if(!team) throw new Error('Коллектив не настроен');
+    const sameDay=(await c.query("SELECT id FROM team_memberships WHERE worker_id=$1 AND valid_from=$2::date AND valid_to IS NULL FOR UPDATE",[workerId,validFrom])).rows[0];
+    if(sameDay) return (await c.query('SELECT * FROM team_memberships WHERE id=$1',[sameDay.id])).rows[0];
     await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL",[validFrom,workerId]);
     return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,team.id,validFrom])).rows[0];
   });
@@ -503,7 +505,7 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
 }));
 app.delete('/api/team-memberships/:workerId', auth, roles('admin'), asyncRoute(async (req,res) => {
   const workerId=String(req.params.workerId);
-  const validTo=String(req.body.validTo||new Date().toISOString().slice(0,10));
+  const validTo=String(req.body.validTo||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv'}).format(new Date()));
   const r=await pool.query("UPDATE team_memberships SET valid_to=$1::date WHERE worker_id=$2 AND valid_to IS NULL RETURNING *",[validTo,workerId]);
   if(!r.rowCount) return res.status(404).json({error:'Работник сейчас не состоит в бригаде'});
   res.json(r.rows[0]);
