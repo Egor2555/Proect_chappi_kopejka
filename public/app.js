@@ -58,7 +58,8 @@ async function home(){
      '<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
- const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);\n $('#home').innerHTML='<h1>Сегодня</h1><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+ const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);
+ $('#home').innerHTML='<h1>Сегодня</h1><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
 }
 async function orders(){
   state.orders=await api('/orders');
