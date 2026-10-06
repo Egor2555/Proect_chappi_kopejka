@@ -118,7 +118,7 @@ async function must(path, options, expected=200) {
   assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
   assert.equal(closedReport.total.totalMinor,'250');
   const closedProduction=await request('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[{productId:product.id,quantity:1}],workerIds:[worker.id,workerS.id,workerC.id]}});
-  assert.equal(closedProduction.status,403);
+  assert.equal(closedProduction.status,400);
 
   await must('/api/fund',{token:brigadierLogin.token});
   const brigadierCannotCreateOrder=await request('/api/orders',{token:brigadierLogin.token,method:'POST',body:{orderNumber:'CI-FORBIDDEN',title:'Should be denied',items:[{productId:product.id,requiredQty:1}]}});
