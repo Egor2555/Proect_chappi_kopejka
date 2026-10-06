@@ -1086,7 +1086,6 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
     SELECT o.id order_id,o.order_number,o.status,i.product_id,i.required_qty,
       COALESCE(sh.shipped,0)::int shipped,
       COALESCE(prod.produced,0)::int produced,
-      COALESCE(resv.reserved_available,0)::int reserved_available,
       p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
       COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
     FROM orders o
@@ -1102,15 +1101,6 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
       FROM shipment_items si
       WHERE si.order_id=o.id AND si.product_id=i.product_id
     ) sh ON true
-    LEFT JOIN LATERAL(
-      SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((
-        SELECT SUM(sa.quantity) FROM shipment_allocations sa
-        WHERE sa.reservation_movement_id=r.id
-      ),0)),0)::int reserved_available
-      FROM inventory_movements r
-      WHERE r.product_id=i.product_id AND r.order_id=o.id
-        AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
-    ) resv ON true
     WHERE o.status IN ('active','queued')
     ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
       o.priority DESC,o.created_at ASC,o.id ASC,
@@ -1120,7 +1110,7 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
   for(const x of orderRows.rows){
     const available=Math.max(0,Math.min(
       Number(x.required_qty)-Number(x.shipped),
-      Number(x.produced)-Number(x.shipped)+Number(x.reserved_available)
+      Number(x.produced)-Number(x.shipped)
     ));
     if(available<=0) continue;
     const key=String(x.product_id);
@@ -1262,8 +1252,7 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
       const orderRows=(await c.query(`
         SELECT o.id,o.status,o.priority,o.created_at,i.required_qty,
           COALESCE(sh.shipped,0)::int shipped,
-          COALESCE(prod.produced,0)::int produced,
-          COALESCE(resv.reserved_available,0)::int reserved_available
+          COALESCE(prod.produced,0)::int produced
         FROM orders o
         JOIN order_items i ON i.order_id=o.id AND i.product_id=$1
         LEFT JOIN LATERAL(
@@ -1274,15 +1263,6 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
           SELECT SUM(quantity)::int produced FROM production_allocations
           WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
         ) prod ON true
-        LEFT JOIN LATERAL(
-          SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((
-            SELECT SUM(sa.quantity) FROM shipment_allocations sa
-            WHERE sa.reservation_movement_id=r.id
-          ),0)),0)::int reserved_available
-          FROM inventory_movements r
-          WHERE r.product_id=$1 AND r.order_id=o.id
-            AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
-        ) resv ON true
         WHERE o.status IN ('active','queued')
         ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
           o.priority DESC,o.created_at ASC,o.id ASC
@@ -1295,7 +1275,7 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
         if(left<=0) break;
         const available=Math.max(0,Math.min(
           Number(order.required_qty)-Number(order.shipped),
-          Number(order.produced)-Number(order.shipped)+Number(order.reserved_available)
+          Number(order.produced)-Number(order.shipped)
         ));
         if(available<=0) continue;
         const take=Math.min(left,available);
