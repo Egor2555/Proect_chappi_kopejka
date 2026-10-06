@@ -342,10 +342,24 @@ async function people(){
    html+=financeVisible
      ? '<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>'
      : '<p><strong>Всего:</strong> '+r.total.quantity+' шт.</p>';
+   if(state.user.role==='admin' && !r.closed){
+     const rateItems=r.items.filter(x=>x.rate_minor===null);
+     if(rateItems.length){
+       html+='<div class="card"><h2>Расценки для закрытия месяца</h2><p class="muted">Введите расценку по каждому типоразмеру, для которого она ещё не задана.</p><div id="monthlyRates">';
+       html+=rateItems.map(x=>'<div class="card"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m)))+'</strong><label>Расценка<input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></label><button type="button" class="saveMonthlyRate" data-product-id="'+x.product_id+'">Сохранить расценку</button></div>').join('');
+       html+='</div></div>';
+     }
+   }
    if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m)))).join(', ')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
    if(state.user.role==='admin') { const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>'; else { html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>'; html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>'; } }
    $('#reportResult').innerHTML=html;
+   document.querySelectorAll('.saveMonthlyRate').forEach(b=>b.onclick=async()=>{
+     const input=document.querySelector('.monthlyRateInput[data-product-id="'+b.dataset.productId+'"]');
+     const value=input?.value;
+     if(value===''||Number(value)<0){notify('Введите расценку','error');return}
+     try{await api('/rates',{method:'POST',body:JSON.stringify({productId:b.dataset.productId,periodMonth:m+'-01',amountMinor:Math.round(Number(value)*100)})});notify('Расценка сохранена','success');await load()}catch(e){notify(e.message,'error')}
+   });
    const b=$('#closeMonth');
    if(b)b.onclick=async()=>{
      if(!confirm('Закрыть месяц '+m+'? Система сначала рассчитает каждый рабочий день по введённым расценкам и разделит стоимость дня между работавшими в этот день. После закрытия месяц фиксируется.'))return;
