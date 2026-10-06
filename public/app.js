@@ -376,9 +376,38 @@ async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
+ const currentMonth=localDate().slice(0,7);
+ const shippedTotals=new Map();
+ for(const shipment of rows){
+   const shippedMonth=String(shipment.shipped_at||'').slice(0,7);
+   if(shippedMonth!==currentMonth) continue;
+   for(const item of (shipment.items||[])){
+     const productId=String(item.product_id||item.productId||'');
+     if(!productId) continue;
+     const current=shippedTotals.get(productId)||{productId,quantity:0,label:(item.section_width_mm||'')+'×'+(item.section_height_mm||'')+' · '+(item.length_label||formatMeters(item.length_m))};
+     current.quantity+=Number(item.quantity||0);
+     shippedTotals.set(productId,current);
+   }
+ }
+ const shippedRows=[...shippedTotals.values()].sort((a,b)=>a.label.localeCompare(b.label,'uk'));
+ const shippedTotal=shippedRows.reduce((sum,x)=>sum+Number(x.quantity||0),0);
+ const shippedWindow=shippedRows.length
+   ? '<div class="shipment-total-rows">'+shippedRows.map(x=>'<div class="shipment-total-row"><span>'+escapeHtml(x.label)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('')+'</div><p><strong>Всего:</strong> '+shippedTotal+' шт.</p>'
+   : '<div class="empty">В текущем месяце отправок ещё нет.</div>';
  const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>{const prefix=i.order_number?escapeHtml(i.order_number)+' · ':'';const extra=i.order_number?'':' · со склада';return prefix+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity+extra;}).join(', ')+'</p>').join('');
- $('#shipments').innerHTML='<h1>Отправки</h1>'+(canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+'<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+'<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
+ $('#shipments').innerHTML='<h1>Отправки</h1>'+
+   (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form></div>':'')+
+   '<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+
+   '<div class="card"><h2>Всего отправлено</h2><p class="muted">За текущий месяц · по сохранённым отгрузкам</p>'+shippedWindow+(canShip?'<div class="shipment-month-actions"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div>':'')+'</div>'+
+   '<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
+ const monthState=await api('/month/state?month='+currentMonth);
+ $('#closeMonthBtn').hidden=!canShip||monthState.brigadierClosed||monthState.finalized;
+ $('#reopenMonthBtn').hidden=!canShip||!monthState.brigadierClosed||monthState.finalized;
+ if(canShip){
+   $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:currentMonth})});notify('Месяц закрыт для текущих отправок','success');await shipments()}catch(e){notify(e.message,'error')}};
+   $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:currentMonth})});notify('Текущий месяц продолжен','success');await shipments()}catch(e){notify(e.message,'error')}};
+ }
  if(f){
    const box=$('#shipmentItems');
    const loadOptions=async()=>{
@@ -409,11 +438,6 @@ async function shipments(){
      }
    };
    await loadOptions();
-   const st=await api('/month/state?month='+localDate().slice(0,7));
-   $('#reopenMonthBtn').hidden=!st.brigadierClosed||st.finalized;
-   $('#closeMonthBtn').hidden=st.brigadierClosed||st.finalized;
-   $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Месяц закрыт для текущих отправок','success');await shipments()}catch(e){notify(e.message,'error')}};
-   $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Текущий месяц продолжен','success');await shipments()}catch(e){notify(e.message,'error')}};
    f.addEventListener('submit',async e=>{
      e.preventDefault();
      const items=[...box.querySelectorAll('.shipmentItem')].map(row=>({source:row.dataset.source,productId:row.querySelector('[name=productId]').value,quantity:Number(row.querySelector('[name=quantity]').value)})).filter(x=>x.quantity>0);
