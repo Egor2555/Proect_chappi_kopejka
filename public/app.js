@@ -368,3 +368,4 @@ async function admin(){
  const restoreForm=$('#restoreForm'); if(restoreForm) restoreForm.addEventListener('submit',async e=>{e.preventDefault();const file=$('#restoreFile').files[0];if(!file)return;try{const backup=JSON.parse(await file.text());const plan=await api('/admin/restore/dry-run',{method:'POST',body:JSON.stringify(backup)});$('#restorePlan').textContent=JSON.stringify(plan,null,2);if(!plan.safeToRestore){notify('Восстановление заблокировано проверкой.','error');return}if(!confirm('ВНИМАНИЕ: текущие рабочие данные будут заменены данными резервной копии. Логины и пароли сохранятся. Продолжить?'))return;const result=await api('/admin/restore',{method:'POST',body:JSON.stringify({confirm:'RESTORE BUSINESS DATA',backup})});$('#restorePlan').textContent=JSON.stringify(result,null,2);notify('Резервная копия восстановлена.','success')}catch(err){notify(err.message,'error')}})
 }
 boot();
+// Chappi: статус бригадира отображается рядом с фамилией.
