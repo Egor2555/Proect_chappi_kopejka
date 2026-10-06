@@ -60,11 +60,14 @@ async function ensureAccessProfiles() {
     IF NOT EXISTS (SELECT 1 FROM worker_role_history) THEN
       INSERT INTO worker_role_history(worker_id,role,valid_from,valid_to)
       SELECT worker_id,'brigadier',effective_from,
-        lead(effective_from) OVER (PARTITION BY worker_id ORDER BY effective_from)-1
+        lead(effective_from) OVER (ORDER BY effective_at)-1
       FROM (
-        SELECT (after_data->>'id')::uuid AS worker_id,created_at::date AS effective_from
+        SELECT (after_data->>'id')::uuid AS worker_id,
+          created_at::date AS effective_from,
+          created_at AS effective_at
         FROM audit_log
         WHERE action='assign_brigadier' AND entity_type='worker'
+          AND after_data ? 'id'
         ORDER BY created_at
       ) x;
     END IF;
@@ -540,7 +543,7 @@ app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
 
 app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (req,res) => {
   const workerId=String(req.params.id);
-  const effectiveFrom=new Date().toISOString().slice(0,10);
+  const effectiveFrom=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const result=await tx(async c=>{
     const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
     if(!w) throw new Error('Работник не найден или архивирован');
