@@ -58,7 +58,7 @@ async function home(){
      '<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
- $('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Производство за день</h3><div class="stat">'+d.today.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий</small></div><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>в очереди</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>';
+ $('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>заказов</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>';
 }
 async function orders(){
   state.orders=await api('/orders');
@@ -205,7 +205,6 @@ async function production(){
    document.querySelectorAll('#dailyDefaultRows [data-product-id]').forEach(inp=>{const q=Number(inp.value||0);if(q>0)items.push({productId:inp.dataset.productId,quantity:q})});
    extra.querySelectorAll('.dailyExtra').forEach(row=>{const q=Number(row.querySelector('input').value||0);if(q>0)items.push({productId:row.querySelector('select').value,quantity:q})});
    const workerIds=[...document.querySelectorAll('.checklist input[type=checkbox]:checked')].map(x=>x.value);
-   if(!items.length){notify('Укажите изготовленные столбы','error');return}
    if(!workerIds.length){notify('Отметьте работников, которые работали','error');return}
    try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items,workerIds})});notify('Отчёт сохранён','success');await production()}catch(e){notify(e.message,'error')}
  };
