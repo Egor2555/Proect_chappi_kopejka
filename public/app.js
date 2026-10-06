@@ -39,28 +39,29 @@ async function updateLoginProfile(profile){
     submit.classList.remove('open-access');
   }
 }
-const loginForm=$('#loginForm');
-if(loginForm){
-  loginForm.addEventListener('submit',async e=>{
-    e.preventDefault();
-    const f=new FormData(e.currentTarget);
-    const submit=e.currentTarget.querySelector('button[type="submit"]');
-    if(submit) submit.disabled=true;
-    try{
-      const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});
-      state.token=d.token;
-      localStorage.setItem('chappiToken',d.token);
-      await boot();
-    }catch(err){
-      const loginError=$('#loginError');
-      if(loginError) loginError.textContent=err.message;
-      const recovery=$('#adminRecoveryStart');
-      if(recovery) recovery.hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true);
-    }finally{
-      if(submit) submit.disabled=false;
-    }
-  });
-}
+document.addEventListener('submit',async e=>{
+  const form=e.target;
+  if(!form || form.id!=='loginForm') return;
+  e.preventDefault();
+  e.stopPropagation();
+  const f=new FormData(form);
+  const submit=form.querySelector('button[type="submit"]');
+  const loginError=$('#loginError');
+  if(submit) submit.disabled=true;
+  if(loginError) loginError.textContent='';
+  try{
+    const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')||''})});
+    state.token=d.token;
+    localStorage.setItem('chappiToken',d.token);
+    await boot();
+  }catch(err){
+    if(loginError) loginError.textContent=err.message;
+    const recovery=$('#adminRecoveryStart');
+    if(recovery) recovery.hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true);
+  }finally{
+    if(submit) submit.disabled=false;
+  }
+},true);
 document.querySelectorAll('[data-login-profile]').forEach(b=>b.addEventListener('click',()=>updateLoginProfile(b.dataset.loginProfile)));
 updateLoginProfile('worker');
 const recoveryStart=$('#adminRecoveryStart');
