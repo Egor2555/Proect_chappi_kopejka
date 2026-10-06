@@ -604,7 +604,7 @@ app.delete('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async 
   res.json(result);
 }));
 
-app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async (req,res) => {
+app.get('/api/daily-reports', auth, roles('brigadier','admin','worker'), asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
