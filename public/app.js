@@ -1,6 +1,7 @@
 const state={token:localStorage.getItem('chappiToken'),user:null,products:[],teams:[],workers:[],orders:[]};
 const $=s=>document.querySelector(s);
 function localDate(){const d=new Date();const pad=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function formatDateDMY(value,withTime=false){if(!value)return '';const d=new Date(value+'');if(Number.isNaN(d.getTime())){const m=String(value).match(/^(\\d{4})-(\\d{2})-(\\d{2})/);return m?m[3]+'.'+m[2]+'.'+m[1]:String(value)}const pad=n=>String(n).padStart(2,'0');const base=pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear();return withTime?base+' '+pad(d.getHours())+':'+pad(d.getMinutes()):base}
 const money=n=>(Number(n||0)/100).toLocaleString('uk-UA',{minimumFractionDigits:2,maximumFractionDigits:2})+' грн';
 async function api(url,options={}){const res=await fetch('/api'+url,{...options,headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{}),...(options.headers||{})}});const data=await res.json().catch(()=>({}));if(!res.ok){const err=new Error(data.error||'Ошибка запроса');err.status=res.status;err.code=data.code;Object.assign(err,data);throw err}return data}
 function notify(msg,kind='notice'){$('#notice').innerHTML='<div class="'+kind+'">'+escapeHtml(msg)+'</div>';setTimeout(()=>$('#notice').replaceChildren(),5000)}
@@ -49,7 +50,7 @@ async function renderTab(tab){if(tab==='home')return home();if(tab==='production
 function dailyProductionCard(report){
  const status=!report.exists?'missing':(report.dayOff?'day-off':(report.items?.length?'ready':'in-work'));
  const cls='daily-production-card '+status;
- if(status==='missing') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p><div class="daily-empty">⚠️<strong>Информации за текущий день ещё нет.</strong><span>Бригадир ещё не внёс данные.</span></div></div>';
+ if(status==='missing') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(formatDateDMY(report.workDate))+'</p><div class="daily-empty">⚠️<strong>Информации за текущий день ещё нет.</strong><span>Бригадир ещё не внёс данные.</span></div></div>';
  if(status==='day-off') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p><div class="daily-empty"><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div></div>';
  const rows=(report.items||[]).map(x=>'<div class="daily-row"><span>'+formatProduct(x)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('');
  const names=(report.workerIds||[]).map(id=>state.workers.find(w=>String(w.id)===String(id))?.display_name).filter(Boolean);
@@ -250,7 +251,7 @@ async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity)).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity)).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>'+
  (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><p class="muted">Выберите заказ или оставьте «Без заказа» для отправки свободного склада.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')
  ;
@@ -408,7 +409,7 @@ async function archive(){
  const rows=await api('/archive/months');
  $('#archive').innerHTML='<h1>Архив месяцев</h1><div class="card"><p class="muted">Показываются закрытые месяцы за последние шесть месяцев. Закрытые итоги хранятся отдельным снимком.</p>'+rows.map(x=>{
    const pay=x.totals?.earnings||[];
-   return '<div class="card"><strong>'+escapeHtml(String(x.period_month).slice(0,7))+'</strong><p>Закрыт: '+new Date(x.closed_at).toLocaleString('uk-UA')+'</p><p>Количество: '+(x.totals.total?.quantity??'—')+' · Сумма: '+(x.totals.total?.totalMinor?money(x.totals.total.totalMinor):'—')+'</p>'+
+   return '<div class="card"><strong>'+escapeHtml(String(x.period_month).slice(0,7))+'</strong><p>Закрыт: '+formatDateDMY(x.closed_at,true)+'</p><p>Количество: '+(x.totals.total?.quantity??'—')+' · Сумма: '+(x.totals.total?.totalMinor?money(x.totals.total.totalMinor):'—')+'</p>'+
      (pay.length?'<h3>Выплаты работникам</h3>'+simpleTable(pay.map(p=>({display_name:p.displayName,amount:money(p.amountMinor)})),[['display_name','Работник'],['amount','Выплата']]):'')+
      '</div>';
  }).join('')+'</div>'
