@@ -541,8 +541,8 @@ app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async
 
 app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {workDate,items=[],workerIds=[]}=req.body;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!items.length||!Array.isArray(workerIds))
-    return res.status(400).json({error:'Укажите дату, изготовленные типоразмеры и работавших людей'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!Array.isArray(workerIds))
+    return res.status(400).json({error:'Укажите дату и работавших людей'});
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
     if(!team) throw new Error('Коллектив не настроен');
@@ -740,6 +740,27 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
     const before=order;
     const after=(await c.query(`UPDATE orders SET status='cancelled',completed_at=NULL,cancelled_at=now(),cancel_reason=$2
       WHERE id=$1 RETURNING *`,[orderId,reason])).rows[0];
+
+    // Освободившийся склад не должен ждать следующего заказа:
+    // автоматически передаём его первому подходящему незавершённому заказу.
+    const candidateOrders=(await c.query(`SELECT DISTINCT o.id
+      FROM orders o
+      JOIN order_items oi ON oi.order_id=o.id
+      WHERE o.status IN ('active','queued')
+        AND oi.product_id IN (SELECT product_id FROM order_items WHERE order_id=$1)
+      ORDER BY o.priority DESC,o.created_at ASC
+      FOR UPDATE OF o`,[orderId])).rows;
+    for(const candidate of candidateOrders) {
+      await autoAllocateFreeStockToOrder(c,candidate.id,req.user.sub);
+      const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i
+        WHERE i.order_id=$1 AND i.required_qty >
+        COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
+          WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[candidate.id])).rows[0].n;
+      if(Number(missing)===0) {
+        await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1 AND status IN ('active','queued')",[candidate.id]);
+      }
+    }
+
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
     await c.query(`UPDATE orders SET status='active' WHERE id=(
       SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
