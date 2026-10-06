@@ -409,7 +409,7 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
       LEFT JOIN LATERAL (SELECT SUM(a.quantity)::int qty FROM production_allocations a
         WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL) done ON true
       WHERE o.status IN ('queued','active') GROUP BY o.id
-      ORDER BY o.priority DESC,o.created_at ASC`)
+      ORDER BY o.priority DESC,o.created_at ASC,o.id ASC`)
   ]);
   res.json({ today:today.rows, stock:stock.rows, orders:queue.rows });
 }));
@@ -714,7 +714,7 @@ app.get('/api/orders', auth, asyncRoute(async (_req,res) => {
     'done',COALESCE(d.qty,0),'remaining',GREATEST(i.required_qty-COALESCE(d.qty,0),0)) ORDER BY p.length_mm),'[]') AS items
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
     LEFT JOIN LATERAL(SELECT SUM(a.quantity)::int qty FROM production_allocations a WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL)d ON true
-    GROUP BY o.id ORDER BY o.priority DESC,o.created_at ASC`);
+    GROUP BY o.id ORDER BY o.priority DESC,o.created_at ASC,o.id ASC`);
   res.json(r.rows);
 }));
 app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
@@ -738,7 +738,7 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
         WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[o.id])).rows[0].n;
     if(missing===0){
       await c.query("UPDATE orders SET status='completed',completed_at=now() WHERE id=$1",[o.id]);
-      await c.query("UPDATE orders SET status='active' WHERE id=(SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')");
+      await c.query("UPDATE orders SET status='active' WHERE id=(SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC,id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')");
     }
     const created=(await c.query('SELECT * FROM orders WHERE id=$1',[o.id])).rows[0];
     await audit(c,req.user.sub,'create','order',o.id,null,created);
@@ -1017,7 +1017,7 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
     LEFT JOIN LATERAL(SELECT SUM(quantity)::int produced FROM production_allocations WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL) prod ON true
     LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si JOIN shipments s ON s.id=si.shipment_id WHERE s.order_id=o.id AND si.product_id=i.product_id) sh ON true
-    WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
+    WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,o.id ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
   const stockRows=await pool.query(`SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
     COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
     GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
