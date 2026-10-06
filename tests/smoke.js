@@ -42,12 +42,13 @@ async function must(path, options, expected=200) {
   const month=today.slice(0,7)+'-01';
 
   // CI fixture: the application correctly evaluates brigadier history by work date.
-  // Seed the test brigadier as effective from day1 so historical daily reports
-  // exercise that rule without weakening production validation.
+  // Seed the current brigadier's history for the two earlier test days without
+  // weakening production validation.
+  const brigMe=await must('/api/me',{token:brigadier});
   const {Client}=require('pg');
   const db=new Client({connectionString:process.env.DATABASE_URL});
   await db.connect();
-  await db.query("UPDATE worker_role_history SET valid_from=$1::date WHERE role='brigadier' AND valid_to IS NULL",[day1]);
+  await db.query("INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,'brigadier',$2::date) ON CONFLICT DO NOTHING",[brigMe.user.worker_id,day1]);
   await db.end();
 
   const worker=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker F'}},201);
