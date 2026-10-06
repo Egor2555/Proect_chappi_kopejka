@@ -401,10 +401,10 @@ async function shipments(){
    '<div class="card"><h2>Всего отправлено</h2><p class="muted">За текущий месяц · по сохранённым отгрузкам</p>'+shippedWindow+(canShip?'<div class="shipment-month-actions"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div>':'')+'</div>'+
    '<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
- const monthState=await api('/month/state?month='+currentMonth);
- $('#closeMonthBtn').hidden=!canShip||monthState.brigadierClosed||monthState.finalized;
- $('#reopenMonthBtn').hidden=!canShip||!monthState.brigadierClosed||monthState.finalized;
  if(canShip){
+   const monthState=await api('/month/state?month='+currentMonth);
+   $('#closeMonthBtn').hidden=monthState.brigadierClosed||monthState.finalized;
+   $('#reopenMonthBtn').hidden=!monthState.brigadierClosed||monthState.finalized;
    $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:currentMonth})});notify('Месяц закрыт для текущих отправок','success');await shipments()}catch(e){notify(e.message,'error')}};
    $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:currentMonth})});notify('Текущий месяц продолжен','success');await shipments()}catch(e){notify(e.message,'error')}};
  }
