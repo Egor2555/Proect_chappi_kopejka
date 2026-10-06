@@ -1175,7 +1175,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
-  const r=await pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
+  const r=await pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.length_label,COUNT(DISTINCT pe.id)::int entries,
     COALESCE(SUM(sa.quantity),0)::int quantity,
     r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
@@ -1289,7 +1289,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
       GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start])).rows;
     const produced=items.filter(x=>Number(x.quantity)>0);
-    const missing=produced.filter(x=>x.rate_minor===null).map(x=>(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+x.length_m+' м');
+    const missing=produced.filter(x=>x.rate_minor===null).map(x=>(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label || ((x.length_m||'')+' м')));
     if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',w.is_brigadier) ORDER BY w.display_name) workers
