@@ -497,9 +497,15 @@ app.post('/api/team-memberships', auth, roles('admin'), asyncRoute(async (req,re
   const result=await tx(async c=>{
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
     if(!team) throw new Error('Коллектив не настроен');
-    const sameDay=(await c.query("SELECT id FROM team_memberships WHERE worker_id=$1 AND valid_from=$2::date AND valid_to IS NULL FOR UPDATE",[workerId,validFrom])).rows[0];
-    if(sameDay) return (await c.query('SELECT * FROM team_memberships WHERE id=$1',[sameDay.id])).rows[0];
-    await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE worker_id=$2 AND valid_to IS NULL",[validFrom,workerId]);
+    const current=(await c.query("SELECT * FROM team_memberships WHERE worker_id=$1 AND valid_to IS NULL FOR UPDATE",[workerId])).rows[0];
+    if(current && String(current.valid_from).slice(0,10)===String(validFrom).slice(0,10)) return current;
+    // A worker is created with membership effective today. If admin deliberately
+    // backdates that first membership, extend the existing open record backwards
+    // instead of creating an invalid interval (valid_to < valid_from).
+    if(current && new Date(validFrom) < new Date(current.valid_from)){
+      return (await c.query('UPDATE team_memberships SET valid_from=$1::date,team_id=$2 WHERE id=$3 RETURNING *',[validFrom,team.id,current.id])).rows[0];
+    }
+    if(current) await c.query("UPDATE team_memberships SET valid_to=($1::date - INTERVAL '1 day')::date WHERE id=$2",[validFrom,current.id]);
     return (await c.query('INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3) RETURNING *',[workerId,team.id,validFrom])).rows[0];
   });
   res.status(201).json(result);
