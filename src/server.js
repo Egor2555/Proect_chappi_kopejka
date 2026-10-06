@@ -397,10 +397,15 @@ app.post('/api/admin/access/:role/unlock', auth, roles('admin'), asyncRoute(asyn
 
 
 app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
-  const [today, stock, queue] = await Promise.all([
+  const [today, month, stock, queue] = await Promise.all([
     pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m, COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label, SUM(e.quantity)::int AS quantity
       FROM production_entries e JOIN products p ON p.id=e.product_id
       WHERE e.work_date=CURRENT_DATE AND e.voided_at IS NULL GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm,p.length_label ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
+    pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m, COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label, SUM(e.quantity)::int AS quantity
+      FROM production_entries e JOIN products p ON p.id=e.product_id
+      WHERE date_trunc('month',e.work_date)=date_trunc('month',CURRENT_DATE) AND e.voided_at IS NULL
+      GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm,p.length_label
+      ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
     pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,COALESCE(SUM(m.quantity_delta),0)::int AS quantity
       FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
       WHERE p.active=true GROUP BY p.id,p.section_width_mm,p.section_height_mm,p.length_mm ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`),
@@ -414,7 +419,7 @@ app.get('/api/dashboard', auth, asyncRoute(async (req,res) => {
       WHERE o.status IN ('queued','active') GROUP BY o.id
       ORDER BY o.priority DESC,o.created_at ASC,o.id ASC`)
   ]);
-  res.json({ today:today.rows, stock:stock.rows, orders:queue.rows });
+  res.json({ today:today.rows, month:month.rows, stock:stock.rows, orders:queue.rows });
 }));
 
 app.get('/api/products', auth, asyncRoute(async (_req,res) => {
