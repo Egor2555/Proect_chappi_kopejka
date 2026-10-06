@@ -398,7 +398,7 @@ app.post('/api/auth/login', asyncRoute(async (req,res) => {
 app.get('/api/me', auth, (req,res) => res.json({ user:req.user }));
 
 app.get('/api/admin/access', auth, roles('admin'), asyncRoute(async (_req,res) => {
-  const rows=await pool.query("SELECT id,role,pin_enabled,pin_locked,pin_failed_attempts FROM users WHERE role IN ('admin','brigadier','worker') AND active=true ORDER BY CASE role WHEN 'admin' THEN 1 WHEN 'brigadier' THEN 2 ELSE 3 END");
+  const rows=await pool.query("SELECT id,role,pin_enabled,pin_ciphertext,pin_locked,pin_failed_attempts FROM users WHERE role IN ('admin','brigadier','worker') AND active=true ORDER BY CASE role WHEN 'admin' THEN 1 WHEN 'brigadier' THEN 2 ELSE 3 END");
   res.json(rows.rows.map(x=>({role:x.role,pinEnabled:x.pin_enabled,pin:x.pin_enabled?decryptPin(x.pin_ciphertext):null,locked:x.pin_locked,failedAttempts:x.pin_failed_attempts})));
 }));
 app.patch('/api/admin/access/:role', auth, roles('admin'), asyncRoute(async (req,res) => {
