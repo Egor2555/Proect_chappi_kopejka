@@ -143,6 +143,7 @@ async function orders(){
       '<label>Приоритет<select name="priority"><option value="0">Без приоритета</option><option value="1">1 — первый</option><option value="2">2 — второй</option><option value="3">3 — третий</option><option value="4">4 — четвёртый</option><option value="5">5 — пятый</option></select></label>'+
       '<div><h3>Позиции заказа</h3><div id="orderItems"></div><button type="button" id="addOrderItem" class="secondary">+ Добавить типоразмер</button></div>'+
       '<button type="submit">Создать заказ</button></form></div>':'')+
+    '<div class="card"><h2>Текущие заказы</h2>'+orderCards(visible,true)+'</div>';
     '';
   const form=$('#orderForm');
   if(form){
@@ -399,7 +400,7 @@ async function shipments(){
  $('#shipments').innerHTML='<h1>Отправки</h1>'+
    (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form></div>':'')+
 
-   '<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+   '<div class="card"><h2>Всего отправлено</h2><p class="muted">За текущий месяц · по сохранённым отгрузкам</p>'+shippedWindow+(canShip?'<div class="shipment-month-actions"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div>':'')+'</div>'+
+   '<div class="card"><h2>Всего отправлено</h2><p class="muted">За текущий месяц · по сохранённым отгрузкам</p>'+shippedWindow+(canShip?'<div class="shipment-month-actions"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div>':'')+'</div>'+
    '<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
  if(canShip){
