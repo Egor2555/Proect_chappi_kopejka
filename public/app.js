@@ -43,7 +43,7 @@ updateLoginProfile('worker');
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});state.token=d.token;localStorage.setItem('chappiToken',d.token);await boot()}catch(err){$('#loginError').textContent=err.message;$('#adminRecoveryStart').hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true)}});
 $('#adminRecoveryStart').addEventListener('click',async()=>{const b=$('#adminRecoveryStart');b.disabled=true;try{const d=await api('/auth/recovery/request',{method:'POST',body:'{}'});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').hidden=false;}catch(err){$('#recoveryError').textContent=err.message;$('#adminRecoveryForm').hidden=false;}finally{b.disabled=false}});
 $('#adminRecoveryForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/recovery/complete',{method:'POST',body:JSON.stringify({code:f.get('code'),newPin:f.get('newPin')})});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').reset();$('#adminRecoveryForm').hidden=true;$('#adminRecoveryStart').hidden=true;$('#loginError').textContent='';$('#loginForm [name=pin]').value='';}catch(err){$('#recoveryError').textContent=err.message}});
-async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=state.user.role!=='brigadier');const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
+async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=true);const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';return Number(n.toFixed(3)).toString()+' м'}
@@ -77,7 +77,8 @@ async function home(){
    return;
  }
  const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);
- $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+ $('#home').innerHTML='<h1>Сегодня</h1>'+ (state.user.role==='brigadier'?'<div id="dailyReportWindow"></div>':'') +'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+ if(state.user.role==='brigadier') await production('#dailyReportWindow');
 }
 async function orders(){
   state.orders=await api('/orders');
@@ -200,8 +201,9 @@ function orderCards(rows,editable=false){
   }).join('');
 }
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
-async function production(){
- if(state.user.role!=='brigadier'){ $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p class="empty">Ежедневный отчёт заполняет только бригадир.</p></div>';return; }
+async function production(target='#production'){
+ const targetEl=()=>$(target);
+ if(state.user.role!=='brigadier'){ targetEl().innerHTML='';return; }
  const date=localDate();
  const [report,orders,workers]=await Promise.all([api('/daily-reports?date='+date),api('/orders'),api('/team-members?date='+date)]);
  const first=orders.find(o=>o.status==='active')||orders.find(o=>o.status==='queued');
@@ -216,7 +218,7 @@ async function production(){
  const checked=new Set((report.workerIds||[]).map(String));
  const brigadier=workers.find(w=>w.is_brigadier&&w.active);
   const workerRows=workers.filter(w=>!w.is_brigadier&&w.active).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
- $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+'<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button><button type="button" id="markDayOff" class="secondary"'+(report.exists?' hidden':'')+'>Отметить выходной</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
+ targetEl().innerHTML='<div class="card daily-report-window"><h2>Ежедневный отчёт</h2><p><strong>Дата:</strong> '+formatDateDMY(date)+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+'<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button><button type="button" id="markDayOff" class="secondary"'+(report.exists?' hidden':'')+'>Отметить выходной</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
  const extra=$('#dailyExtraRows');
  const addExtraRow=(selectedProductId='',quantity='')=>{
    const used=[...document.querySelectorAll('#dailyDefaultRows [data-product-id],#dailyExtraRows select')].map(x=>x.dataset?.productId||x.value);
@@ -227,7 +229,7 @@ async function production(){
    row.querySelector('button').onclick=()=>row.remove();extra.append(row);
  };
  $('#addDailySize').onclick=()=>addExtraRow();
- $('#markDayOff').onclick=async()=>{if(!confirm('Отметить текущий день как выходной?'))return;try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items:[],workerIds:[],dayOff:true})});notify('День отмечен как выходной','success');await production()}catch(e){notify(e.message,'error')}};
+ $('#markDayOff').onclick=async()=>{if(!confirm('Отметить текущий день как выходной?'))return;try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items:[],workerIds:[],dayOff:true})});notify('День отмечен как выходной','success');await production(target)}catch(e){notify(e.message,'error')}};
  if(report.exists){
    const defaultIds=new Set(defaultProducts.map(p=>String(p.id)));
    for(const item of (report.items||[])){
@@ -241,7 +243,7 @@ async function production(){
    extra.querySelectorAll('.dailyExtra').forEach(row=>{const q=Number(row.querySelector('input').value||0);if(q>0)items.push({productId:row.querySelector('select').value,quantity:q})});
    const workerIds=[...document.querySelectorAll('.checklist input[type=checkbox]:checked')].map(x=>x.value);
    if(!workerIds.length){notify('Отметьте работников, которые работали','error');return}
-   try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items,workerIds})});notify('Отчёт сохранён','success');await production()}catch(e){notify(e.message,'error')}
+   try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items,workerIds})});notify('Отчёт сохранён','success');await production(target)}catch(e){notify(e.message,'error')}
  };
  if(report.exists){
    document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.checklist input').forEach(x=>x.disabled=true);
