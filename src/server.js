@@ -46,6 +46,9 @@ async function ensureAccessProfiles() {
   await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
   await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
   await pool.query('ALTER TABLE orders ALTER COLUMN order_number DROP NOT NULL');
+  // Migrate existing Railway DB constraint so fully shipped orders can use permanent `closed` status.
+  await pool.query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
+  await pool.query("ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('queued','active','completed','closed','archived','cancelled'))");
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
   // The referenced table must exist before adding the foreign key on older/empty databases.
   await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
@@ -442,7 +445,7 @@ app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (re
 app.patch('/api/orders/:id/archive', auth, roles('admin'), asyncRoute(async (req,res) => {
   const before=(await pool.query('SELECT * FROM orders WHERE id=$1',[req.params.id])).rows[0];
   if(!before) return res.status(404).json({error:'Заказ не найден'});
-  if(!['completed','cancelled'].includes(before.status)) return res.status(400).json({error:'В архив можно перенести только завершённый или отменённый заказ'});
+  if(!['completed','cancelled','closed'].includes(before.status)) return res.status(400).json({error:'В архив можно перенести только завершённый, закрытый или отменённый заказ'});
   const after=(await pool.query("UPDATE orders SET status='archived' WHERE id=$1 RETURNING *",[req.params.id])).rows[0];
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'archive','order',$2,$3,$4)",
     [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
@@ -995,6 +998,9 @@ app.post('/api/orders/:id/activate', auth, roles('admin'), asyncRoute(async (req
 app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (req,res) => {
   const priority=Number(req.body.priority);
   if(!Number.isInteger(priority)||priority<0) return res.status(400).json({error:'Приоритет должен быть целым числом от 0'});
+  const current=(await pool.query('SELECT status FROM orders WHERE id=$1',[req.params.id])).rows[0];
+  if(!current) return res.status(404).json({error:'Заказ не найден'});
+  if(current.status==='closed') return res.status(409).json({error:'Полностью отгруженный заказ закрыт и больше не изменяется'});
   const r=await pool.query('UPDATE orders SET priority=$1 WHERE id=$2 RETURNING *',[priority,req.params.id]);
   if(!r.rowCount) return res.status(404).json({error:'Заказ не найден'});
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'priority_change','order',$2,$3)",
