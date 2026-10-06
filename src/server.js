@@ -765,7 +765,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
 
     // Освободившийся склад не должен ждать следующего заказа:
     // автоматически передаём его первому подходящему незавершённому заказу.
-    const candidateOrders=(await c.query(`SELECT DISTINCT o.id,o.priority,o.created_at
+    const candidateOrders=(await c.query(`SELECT DISTINCT o.id,o.priority,o.created_at,o.status
       FROM orders o
       JOIN order_items oi ON oi.order_id=o.id
       WHERE o.status IN ('active','queued')
