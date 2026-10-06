@@ -71,7 +71,7 @@ async function orders(){
     (canManage?'<div class="card"><h2>Новый заказ</h2><form id="orderForm">'+
       ''+
       '<label>Название заказа<input name="title" required maxlength="160"></label>'+
-      '<label>Приоритет<input name="priority" type="number" min="0" step="1" value="0"></label>'+
+      '<label>Приоритет<select name="priority"><option value="0">Без приоритета</option><option value="1">1 — первый</option><option value="2">2 — второй</option><option value="3">3 — третий</option><option value="4">4 — четвёртый</option><option value="5">5 — пятый</option></select></label>'+
       '<div><h3>Позиции заказа</h3><div id="orderItems"></div><button type="button" id="addOrderItem" class="secondary">+ Добавить типоразмер</button></div>'+
       '<button type="submit">Создать заказ</button></form></div>':'')+
     '<div class="card"><h2>Текущие заказы</h2>'+orderCards(visible,true)+'</div>';
