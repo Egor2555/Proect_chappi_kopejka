@@ -63,7 +63,12 @@ async function home(){
  try{report=await api('/daily-reports?date='+localDate())}catch(e){report={exists:false,workDate:localDate()};}
  const daily=dailyProductionCard(report);
  if(isWorker){
-   $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+   const monthRows=(d.month||[]).filter(x=>Number(x.quantity)>0);
+   const monthTotal=monthRows.reduce((sum,x)=>sum+Number(x.quantity||0),0);
+   const monthCard='<div class="card"><h2>Произведено за текущий месяц</h2>'+(monthRows.length
+     ? simpleTable(monthRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']])+'<p><strong>Всего:</strong> '+monthTotal+' шт.</p>'
+     : '<div class="empty">В этом месяце изделия ещё не произведены.</div>')+'</div>';
+   $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>'+monthCard+'<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
  const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);
