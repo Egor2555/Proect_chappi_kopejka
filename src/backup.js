@@ -1,12 +1,12 @@
 const RESTORE_ORDER = [
-  'workers','teams','products','users','team_memberships','rates','orders','order_items',
+  'workers','teams','products','users','team_memberships','worker_role_history','month_states','rates','orders','order_items',
   'production_entries','production_allocations','attendance_entries','inventory_movements',
   'shipments','shipment_items','shipment_allocations','payment_entries','monthly_worker_earnings','monthly_closures',
   'penny_events','fund_entries','audit_log','login_log'
 ];
 
 const REQUIRED_TABLES = [
-  'workers','teams','team_memberships','products','rates','orders','order_items',
+  'workers','teams','team_memberships','worker_role_history','month_states','products','rates','orders','order_items',
   'monthly_worker_earnings','production_entries','production_allocations',
   'attendance_entries','inventory_movements','shipments','shipment_items','shipment_allocations',
   'payment_entries','monthly_closures','penny_events','fund_entries',
@@ -59,6 +59,7 @@ const USER_REFERENCE_COLUMNS = {
   shipments: ['created_by'],
   payment_entries: ['created_by'],
   monthly_closures: ['closed_by'],
+  month_states: ['brigadier_closed_by','reopened_by','finalized_by'],
   penny_events: ['created_by'],
   fund_entries: ['created_by'],
   audit_log: ['actor_user_id'],
