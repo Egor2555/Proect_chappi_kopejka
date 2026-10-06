@@ -1183,7 +1183,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {items=[]}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
   const normalized=items.map(item=>({
