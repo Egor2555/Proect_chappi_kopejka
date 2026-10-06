@@ -45,7 +45,6 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
   await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
   await pool.query("UPDATE products SET length_label=regexp_replace(regexp_replace(((length_mm::numeric/1000)::numeric(12,3))::text,'0+$',''),'\\.$','') || 'метра' WHERE length_label ~ '^\\d+\\.\\d{4,}метра$'");
-  await pool.query("UPDATE products SET length_label=regexp_replace(regexp_replace(((length_mm::numeric/1000)::numeric(12,3))::text,'0+
   await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
   await pool.query('ALTER TABLE attendance_entries ADD COLUMN IF NOT EXISTS was_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
   await pool.query(`CREATE TABLE IF NOT EXISTS worker_role_history (
