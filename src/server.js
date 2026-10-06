@@ -765,7 +765,8 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
       JOIN order_items oi ON oi.order_id=o.id
       WHERE o.status IN ('active','queued')
         AND oi.product_id IN (SELECT product_id FROM order_items WHERE order_id=$1)
-      ORDER BY o.priority DESC,o.created_at ASC,o.id ASC
+      ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
+               o.priority DESC,o.created_at ASC,o.id ASC
       FOR UPDATE OF o`,[orderId])).rows;
     for(const candidate of candidateOrders) {
       await autoAllocateFreeStockToOrder(c,candidate.id,req.user.sub);
