@@ -205,7 +205,7 @@ async function production(){
  const checked=new Set((report.workerIds||[]).map(String));
  const brigadier=workers.find(w=>w.is_brigadier&&w.active);
   const workerRows=workers.filter(w=>!w.is_brigadier&&w.active).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
- $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+'<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
+ $('#production').innerHTML='<h1>Ежедневный отчёт</h1><div class="card"><p><strong>Дата:</strong> '+date+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+'<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button><button type="button" id="markDayOff" class="secondary"'+(report.exists?' hidden':'')+'>Отметить выходной</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
  const extra=$('#dailyExtraRows');
  const addExtraRow=(selectedProductId='',quantity='')=>{
    const used=[...document.querySelectorAll('#dailyDefaultRows [data-product-id],#dailyExtraRows select')].map(x=>x.dataset?.productId||x.value);
@@ -216,6 +216,7 @@ async function production(){
    row.querySelector('button').onclick=()=>row.remove();extra.append(row);
  };
  $('#addDailySize').onclick=()=>addExtraRow();
+ $('#markDayOff').onclick=async()=>{if(!confirm('Отметить текущий день как выходной?'))return;try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items:[],workerIds:[],dayOff:true})});notify('День отмечен как выходной','success');await production()}catch(e){notify(e.message,'error')}};
  if(report.exists){
    const defaultIds=new Set(defaultProducts.map(p=>String(p.id)));
    for(const item of (report.items||[])){
