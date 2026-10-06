@@ -633,7 +633,6 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       if(!activeNow){
         await c.query("UPDATE orders SET status='active' WHERE id=(SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC,id ASC LIMIT 1)");
       }
-      }
       await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,team.id]);
       await c.query('UPDATE daily_production_reports SET updated_at=now(),created_by=$2 WHERE id=$1',[report.id,req.user.sub]);
     } else {
