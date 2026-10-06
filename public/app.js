@@ -21,9 +21,15 @@ async function updateLoginProfile(profile){
       pinLabel.hidden=!enabled;
       pinInput.required=enabled;
       pinInput.value='';
-      if(enabled){submit.textContent='Войти';submit.classList.remove('open-access');}
-      else {submit.textContent='Войти';submit.classList.add('open-access');}
-    }catch(err){pinLabel.hidden=false;pinInput.required=true;submit.textContent='Войти';submit.classList.remove('open-access');}
+      submit.textContent='Войти';
+      submit.classList.toggle('open-access',!enabled);
+    }catch(err){
+      pinLabel.hidden=false;
+      pinInput.required=true;
+      pinInput.value='';
+      submit.textContent='Войти';
+      submit.classList.remove('open-access');
+    }
   }else{
     pinLabel.hidden=false;
     pinInput.required=true;
