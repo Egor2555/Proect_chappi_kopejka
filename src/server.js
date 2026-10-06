@@ -549,7 +549,9 @@ app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (
   const result=await tx(async c=>{
     const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
     if(!w) throw new Error('Работник не найден или архивирован');
-    const sameDay=(await c.query("SELECT id FROM worker_role_history WHERE worker_id=$1 AND role='brigadier' AND valid_from=$2 FOR UPDATE",[workerId,effectiveFrom])).rowCount>0;
+    const sameDayHistory=(await c.query("SELECT id,worker_id FROM worker_role_history WHERE role='brigadier' AND valid_from=$1 FOR UPDATE",[effectiveFrom])).rows[0];
+    if(sameDayHistory && String(sameDayHistory.worker_id)!==workerId) throw new Error('На сегодня бригадир уже назначен. Повторная смена в этот день запрещена.');
+    const sameDay=sameDayHistory && String(sameDayHistory.worker_id)===workerId;
     if(!sameDay){
       await c.query('UPDATE worker_role_history SET valid_to=(\$1::date - INTERVAL \'1 day\')::date WHERE role=\'brigadier\' AND valid_to IS NULL AND valid_from < \$1::date',[effectiveFrom]);
       await c.query('INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES(\$1,\'brigadier\',\$2)',[workerId,effectiveFrom]);
