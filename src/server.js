@@ -854,7 +854,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
           JOIN shipment_items si ON si.id=sa.shipment_item_id
           JOIN shipments s ON s.id=si.shipment_id
           WHERE im.production_entry_id=a.production_entry_id
-            AND s.order_id=a.order_id),0)::int AS shipped
+            AND si.order_id=a.order_id),0)::int AS shipped
       FROM production_allocations a
       WHERE a.order_id=$1 AND a.voided_at IS NULL
       FOR UPDATE`,[orderId])).rows;
@@ -1089,7 +1089,7 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
     COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label
     FROM orders o JOIN order_items i ON i.order_id=o.id JOIN products p ON p.id=i.product_id
     LEFT JOIN LATERAL(SELECT SUM(quantity)::int produced FROM production_allocations WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL) prod ON true
-    LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si JOIN shipments s ON s.id=si.shipment_id WHERE s.order_id=o.id AND si.product_id=i.product_id) sh ON true
+    LEFT JOIN LATERAL(SELECT SUM(si.quantity)::int shipped FROM shipment_items si WHERE si.order_id=o.id AND si.product_id=i.product_id) sh ON true
     WHERE o.status IN ('active','queued') ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,o.priority DESC,o.created_at ASC,o.id ASC,p.section_width_mm,p.section_height_mm,p.length_mm`);
   const stockRows=await pool.query(`SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
     COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
@@ -1100,14 +1100,21 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
   const stockItems=stockRows.rows.filter(x=>Number(x.available)>0).map(x=>({...x,label:(x.section_width_mm+'×'+x.section_height_mm+' '+x.length_label)}));
   res.json({orderItems,stockItems});
 }));
-
 app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
-  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,'length_m',p.length_mm / 1000.0,'length_label',COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра'),'quantity',i.quantity)) FILTER (WHERE i.id IS NOT NULL),'[]') items
-    FROM shipments s LEFT JOIN shipment_items i ON i.shipment_id=s.id LEFT JOIN products p ON p.id=i.product_id
+  const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object(
+      'order_id',i.order_id,'order_number',o.order_number,
+      'section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,
+      'length_m',p.length_mm / 1000.0,
+      'length_label',COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра'),
+      'quantity',i.quantity
+    )) FILTER (WHERE i.id IS NOT NULL),'[]') items
+    FROM shipments s
+    LEFT JOIN shipment_items i ON i.shipment_id=s.id
+    LEFT JOIN orders o ON o.id=i.order_id
+    LEFT JOIN products p ON p.id=i.product_id
     GROUP BY s.id ORDER BY s.shipped_at DESC LIMIT 200`);
   res.json(r.rows);
 }));
-
 app.post('/api/orders/:id/activate', auth, roles('admin'), asyncRoute(async (req,res) => {
   const force=Boolean(req.body?.force);
   const result=await tx(async c=>{
@@ -1144,78 +1151,66 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
 }));
 
 app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
-  const {orderId=null,recipient='',note='',items=[]}=req.body;
-  if(!orderId) return res.status(400).json({error:'Отгрузка возможна только по заказу'});
+  const {orderIds=[],items=[]}=req.body;
+  const normalizedOrderIds=[...new Set((Array.isArray(orderIds)?orderIds:[]).map(String).filter(Boolean))];
+  if(!normalizedOrderIds.length) return res.status(400).json({error:'Отгрузка возможна только по заказу'});
   if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
-  const shipmentProductIds=items.map(item=>String(item?.productId||''));
-  if(shipmentProductIds.some(id=>!id) || new Set(shipmentProductIds).size!==shipmentProductIds.length)
-    return res.status(400).json({error:'В одной отгрузке один типоразмер можно указать только один раз'});
+  const keys=items.map(item=>String(item?.orderId||'warehouse')+':'+String(item?.productId||''));
+  if(keys.some(k=>k.endsWith(':')) || new Set(keys).size!==keys.length)
+    return res.status(400).json({error:'Одна позиция одного заказа или склада может быть указана только один раз'});
+  const itemOrderIds=[...new Set(items.map(x=>x?.orderId?String(x.orderId):null).filter(Boolean))];
+  if(itemOrderIds.some(id=>!normalizedOrderIds.includes(id)))
+    return res.status(400).json({error:'В отгрузке указан заказ, который не выбран'});
   const shipment=await tx(async c=>{
-    // Serialize shipments with month closure. Without the shared lock, a shipment
-    // could pass the "open month" check while close-month freezes its snapshot.
     const currentMonthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
     const monthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[monthStart])).rows[0]||null;
     const payrollMonth=new Date(monthStart+'T00:00:00Z');
-    // После закрытия рабочей части месяца новые отгрузки относятся
-    // к следующему месяцу по начислению. Если месяц снова открыт —
-    // отгрузка снова относится к закрываемому месяцу.
     if((monthState?.brigadier_closed_at && !monthState?.reopened_at) || monthState?.finalized_at)
       payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
     const payrollMonthText=payrollMonth.toISOString().slice(0,7)+'-01';
-    if(orderId){
-      const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
-      if(!order) throw new Error('Заказ не найден');
-      if(['cancelled','archived','closed'].includes(order.status))
-        throw new Error('Отменённый, полностью отгруженный или архивный заказ нельзя отгружать');
-    }
+    const orders=(await c.query('SELECT id,status FROM orders WHERE id=ANY($1::uuid[]) FOR UPDATE',[normalizedOrderIds])).rows;
+    if(orders.length!==normalizedOrderIds.length) throw new Error('Один из выбранных заказов не найден');
+    if(orders.some(o=>['cancelled','archived','closed'].includes(o.status)))
+      throw new Error('Отменённый, полностью отгруженный или архивный заказ нельзя отгружать');
     const generatedShipmentNumber=(await c.query("SELECT 'ОТГ-' || to_char(clock_timestamp(),'YYYYMMDDHH24MISSMS') || '-' || upper(substr(md5(random()::text),1,4)) AS number")).rows[0].number;
+    const headerOrderId=normalizedOrderIds.length===1?normalizedOrderIds[0]:null;
     const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
-      [generatedShipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
+      [generatedShipmentNumber,headerOrderId,'','',req.user.sub,payrollMonthText])).rows[0];
+    const closedOrders=new Set();
     for(const item of items){
       const qty=Number(item.quantity);
+      const itemOrderId=item.orderId?String(item.orderId):null;
       if(!item.productId||!Number.isInteger(qty)||qty<=0) throw new Error('Проверьте позиции отгрузки');
+      if(itemOrderId&&!normalizedOrderIds.includes(itemOrderId)) throw new Error('Позиция относится к невыбранному заказу');
       await c.query('SELECT id FROM products WHERE id=$1 FOR UPDATE',[item.productId]);
-      if(orderId){
+      if(itemOrderId){
         const orderItem=(await c.query(`SELECT i.required_qty,
-          COALESCE((SELECT SUM(si2.quantity)::int FROM shipment_items si2
-            JOIN shipments s2 ON s2.id=si2.shipment_id
-            WHERE s2.order_id=i.order_id AND si2.product_id=i.product_id),0) shipped
-          FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[orderId,item.productId])).rows[0];
+          COALESCE((SELECT SUM(si2.quantity)::int FROM shipment_items si2 WHERE si2.order_id=i.order_id AND si2.product_id=i.product_id),0) shipped
+          FROM order_items i WHERE i.order_id=$1 AND i.product_id=$2 FOR UPDATE`,[itemOrderId,item.productId])).rows[0];
         if(!orderItem) throw new Error('В выбранном заказе нет такого типоразмера');
         const producedForOrder=Number((await c.query(`SELECT COALESCE(SUM(quantity),0)::int qty FROM production_allocations
-          WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[orderId,item.productId])).rows[0].qty);
+          WHERE order_id=$1 AND product_id=$2 AND voided_at IS NULL`,[itemOrderId,item.productId])).rows[0].qty);
         const orderRemaining=Math.max(0,Math.min(Number(orderItem.required_qty)-Number(orderItem.shipped),producedForOrder-Number(orderItem.shipped)));
         if(qty>orderRemaining) throw new Error('Отгрузка превышает изготовленный доступный остаток выбранной позиции: '+orderRemaining+' шт.');
       }
-      // Free warehouse stock and order-reserved stock are different pools.
-      // Warehouse assignment already subtracts the reserved quantity from the
-      // free-stock ledger, so checking only SUM(quantity_delta) would wrongly
-      // reject a shipment that is fully covered by an earlier warehouse assignment.
       const stock=Number((await c.query('SELECT COALESCE(SUM(quantity_delta),0)::int qty FROM inventory_movements WHERE product_id=$1',[item.productId])).rows[0].qty);
       let reservedAvailable=0;
-      if(orderId){
+      if(itemOrderId){
         reservedAvailable=Number((await c.query(`SELECT COALESCE(SUM(-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.reservation_movement_id=r.id),0)),0)::int qty
-          FROM inventory_movements r
-          WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL`,[item.productId,orderId])).rows[0].qty);
+          FROM inventory_movements r WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL`,[item.productId,itemOrderId])).rows[0].qty);
       }
       const totalAvailable=Math.max(0,stock)+Math.max(0,reservedAvailable);
       if(totalAvailable<qty) throw new Error('Недостаточно доступной продукции выбранного типоразмера');
-      const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,product_id,quantity) VALUES($1,$2,$3) RETURNING id',[sh.id,item.productId,qty])).rows[0];
-      // First consume stock that was explicitly assigned to this order.
-      // Assignment already removed it from free warehouse stock, so no second
-      // shipment_out movement is created for that reserved quantity.
+      const shipmentItem=(await c.query('INSERT INTO shipment_items(shipment_id,order_id,product_id,quantity) VALUES($1,$2,$3,$4) RETURNING id',[sh.id,itemOrderId,item.productId,qty])).rows[0];
       let left=qty;
-      if(orderId){
-        const reserved=(await c.query(`SELECT r.id,r.reference_id,r.production_entry_id,
-            (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity)
-              FROM shipment_allocations sa
-              WHERE sa.reservation_movement_id=r.id),0))::int AS available
+      if(itemOrderId){
+        const reserved=(await c.query(`SELECT r.id,r.reference_id,
+            (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.reservation_movement_id=r.id),0))::int AS available
           FROM inventory_movements r
-          WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out'
-            AND r.reference_id IS NOT NULL
-          ORDER BY r.created_at,r.id FOR UPDATE`,[item.productId,orderId])).rows;
+          WHERE r.product_id=$1 AND r.order_id=$2 AND r.movement_type='adjustment_out' AND r.reference_id IS NOT NULL
+          ORDER BY r.created_at,r.id FOR UPDATE`,[item.productId,itemOrderId])).rows;
         for(const reservation of reserved){
           if(left<=0) break;
           const available=Math.max(0,Number(reservation.available));
@@ -1226,48 +1221,37 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
           left-=take;
         }
       }
-
-      // Then consume any remaining free warehouse stock FIFO.
       let freeTaken=0;
       if(left>0){
         const batches=(await c.query(`SELECT m.id,m.production_entry_id,
             (m.quantity_delta
              -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
-             -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r
-               WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+             -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
           FROM inventory_movements m
-          WHERE m.product_id=$1
-            AND (m.movement_type IN ('production_in','surplus_transfer')
+          WHERE m.product_id=$1 AND (m.movement_type IN ('production_in','surplus_transfer')
               OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
-            AND m.quantity_delta>0
-          ORDER BY m.created_at,m.id
-          FOR UPDATE`,[item.productId])).rows;
+            AND m.quantity_delta>0 ORDER BY m.created_at,m.id FOR UPDATE`,[item.productId])).rows;
         for(const batch of batches){
           if(left<=0) break;
           const take=Math.min(left,Math.max(0,Number(batch.available)));
           if(take<=0) continue;
           await c.query('INSERT INTO shipment_allocations(shipment_item_id,inventory_movement_id,quantity) VALUES($1,$2,$3)',
             [shipmentItem.id,batch.id,take]);
-          left-=take;
-          freeTaken+=take;
+          left-=take; freeTaken+=take;
         }
       }
       if(left>0) throw new Error('Часть складского остатка не имеет свободной производственной партии. Отгрузка остановлена, чтобы не потерять связь с заработком.');
       if(freeTaken>0){
         await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,order_id,reference_id,created_by,note)
           VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,
-          [item.productId,-freeTaken,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
+          [item.productId,-freeTaken,itemOrderId,sh.id,req.user.sub,'Отгрузка '+generatedShipmentNumber]);
       }
+      if(itemOrderId) closedOrders.add(itemOrderId);
     }
-    // Полная отгрузка = заказ принят клиентом и оплачен.
-    // Такой заказ больше нельзя отменять, менять или возвращать в очередь.
-    if(orderId){
+    for(const orderId of closedOrders){
       const left=Number((await c.query(`SELECT COALESCE(SUM(GREATEST(i.required_qty-COALESCE(x.shipped,0),0)),0)::int qty
-        FROM order_items i
-        LEFT JOIN LATERAL (
-          SELECT SUM(si.quantity)::int shipped FROM shipment_items si
-          JOIN shipments s ON s.id=si.shipment_id
-          WHERE s.order_id=i.order_id AND si.product_id=i.product_id
+        FROM order_items i LEFT JOIN LATERAL (
+          SELECT SUM(si.quantity)::int shipped FROM shipment_items si WHERE si.order_id=i.order_id AND si.product_id=i.product_id
         ) x ON true WHERE i.order_id=$1`,[orderId])).rows[0].qty);
       if(left===0) await c.query("UPDATE orders SET status='closed',completed_at=COALESCE(completed_at,now()) WHERE id=$1",[orderId]);
     }
@@ -1276,7 +1260,6 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
   });
   res.status(201).json(shipment);
 }));
-
 app.get('/api/payments', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT p.*,s.shipment_number FROM payment_entries p JOIN shipments s ON s.id=p.shipment_id ORDER BY p.credited_at DESC`);
   res.json(r.rows);
