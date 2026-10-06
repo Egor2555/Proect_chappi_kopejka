@@ -106,7 +106,15 @@ CREATE TABLE IF NOT EXISTS production_entries (
 );
 
 CREATE TABLE IF NOT EXISTS attendance_entries (
-
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  work_date DATE NOT NULL,
+  worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
+  was_brigadier BOOLEAN NOT NULL DEFAULT FALSE,
+  team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
+  created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(work_date, worker_id)
+);
 
 CREATE TABLE IF NOT EXISTS worker_role_history (
   id BIGSERIAL PRIMARY KEY,
@@ -119,15 +127,6 @@ CREATE TABLE IF NOT EXISTS worker_role_history (
 );
 CREATE INDEX IF NOT EXISTS idx_worker_role_history_lookup ON worker_role_history(worker_id,valid_from,valid_to);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_worker_role_history_brigadier_day ON worker_role_history(valid_from) WHERE role='brigadier';
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  work_date DATE NOT NULL,
-  worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
-  was_brigadier BOOLEAN NOT NULL DEFAULT FALSE,
-  team_id UUID NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,
-  created_by UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(work_date, worker_id)
-);
 
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
