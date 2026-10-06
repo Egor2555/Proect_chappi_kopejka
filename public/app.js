@@ -576,7 +576,7 @@ async function archive(){
  }).join('')+'</div>'
 }
 async function profile(){
- $('#profile').innerHTML='<h1>Профиль</h1><div class="card"><p class="muted">Пароль и PIN профиля самостоятельно изменить нельзя. Изменение доступа выполняет только администратор.</p></div>';
+ $('#profile').innerHTML='<h1>Профиль</h1><div class="card"><h2>Доступ к профилю</h2><p class="muted">Пароль и PIN самостоятельно изменить нельзя.</p><p>Изменение PIN и других параметров доступа выполняет только администратор.</p></div>';
 }
 async function admin(){
  await api('/admin/mode-event',{method:'POST',body:JSON.stringify({})});
