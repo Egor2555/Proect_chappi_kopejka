@@ -286,7 +286,7 @@ async function people(){
  const canManage=state.user.role==='admin';
  $('#people').innerHTML='<h1>Коллектив</h1>'+
  '<div class="card"><p class="muted">Администратор один раз добавляет работников. Здесь же видно, кто назначен бригадиром.</p><div class="checklist">'+
- state.workers.filter(w=>w.active).map(w=>'<div class="worker-list-row"><span><strong>'+escapeHtml(w.display_name)+'</strong>'+(w.is_brigadier?' <span class="role-badge">БРИГАДИР</span>':'')+'</span>'+(canManage?'<button type="button" class="danger archiveWorker" data-id="'+w.id+'">Уволить</button>':'')+'</div>').join('')+
+ state.workers.filter(w=>w.active).map(w=>'<div class="worker-list-row"><span><strong>'+escapeHtml(w.display_name)+'</strong>'+(w.is_brigadier?' <span class="worker-role-status">· Бригадир</span>':'')+'</span>'+(canManage?'<button type="button" class="danger archiveWorker" data-id="'+w.id+'">Уволить</button>':'')+'</div>').join('')+
  (state.workers.filter(w=>w.active).length?'':'<p class="empty">В коллективе пока нет работников.</p>')+
  '</div></div>'+
  (canManage?'<div class="card"><h2>Добавить работника</h2><form id="workerForm"><label>Имя / фамилия<input name="displayName" required></label><button>Добавить в коллектив</button></form></div>':'')+
