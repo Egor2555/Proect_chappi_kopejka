@@ -547,9 +547,11 @@ app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (
   const result=await tx(async c=>{
     const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
     if(!w) throw new Error('Работник не найден или архивирован');
-    await c.query('UPDATE worker_role_history SET valid_to=($1::date - INTERVAL \'1 day\')::date WHERE role=\'brigadier\' AND valid_to IS NULL AND valid_from < $1::date',[effectiveFrom]);
-    await c.query('INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,\'brigadier\',$2)',[workerId,effectiveFrom]);
-    await c.query('UPDATE workers SET is_brigadier=false WHERE is_brigadier=true');
+    const sameDay=(await c.query("SELECT id FROM worker_role_history WHERE worker_id=$1 AND role='brigadier' AND valid_from=$2 FOR UPDATE",[workerId,effectiveFrom])).rowCount>0;
+    if(!sameDay){
+      await c.query('UPDATE worker_role_history SET valid_to=(\$1::date - INTERVAL \'1 day\')::date WHERE role=\'brigadier\' AND valid_to IS NULL AND valid_from < \$1::date',[effectiveFrom]);
+      await c.query('INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES(\$1,\'brigadier\',\$2)',[workerId,effectiveFrom]);
+    }await c.query('UPDATE workers SET is_brigadier=false WHERE is_brigadier=true');
     const updated=(await c.query('UPDATE workers SET is_brigadier=true WHERE id=$1 RETURNING *',[workerId])).rows[0];
     const brig=(await c.query("SELECT id FROM users WHERE role='brigadier' AND active=true LIMIT 1")).rows[0];
     if(brig) await c.query('UPDATE users SET worker_id=$1 WHERE id=$2',[workerId,brig.id]);
@@ -1305,7 +1307,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       GROUP BY pe.work_date,pe.team_id`,[start]);
     const dayAttendance=await pool.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE a.was_brigadier=false
+      WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
         AND EXISTS (
         SELECT 1 FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
@@ -1325,7 +1327,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
         FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-        WHERE a.was_brigadier=false
+        WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
         JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
         JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type IN ('production_in','surplus_transfer')
         JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
@@ -1376,7 +1378,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',a.was_brigadier) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE a.was_brigadier=false
+      WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
         AND EXISTS (
         SELECT 1
         FROM shipment_items si
