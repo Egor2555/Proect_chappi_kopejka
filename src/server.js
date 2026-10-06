@@ -1340,14 +1340,16 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
-        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-        WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
+        FROM attendance_entries a
+        JOIN workers w ON w.id=a.worker_id
         JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
         JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type IN ('production_in','surplus_transfer')
         JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
         JOIN shipment_items si ON si.id=sa.shipment_item_id
         JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date AND s.payroll_month < ($1::date + INTERVAL '1 month')
-        WHERE pe.voided_at IS NULL ORDER BY w.display_name`,[start])).rows
+        WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
+          AND pe.voided_at IS NULL
+        ORDER BY w.display_name`,[start])).rows
     : [];
   const visibleItems=req.user.role==='worker'
       ? r.rows.map(row=>({...row,rate_minor:null,total_minor:null}))
