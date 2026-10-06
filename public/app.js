@@ -8,7 +8,8 @@ function notify(msg,kind='notice'){$('#notice').innerHTML='<div class="'+kind+'"
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function roleName(r){return ({admin:'Администратор',brigadier:'Бригадир',worker:'Работник'})[r]||r}
 function showTab(tab){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==tab);document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));}
-$('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b){showTab(b.dataset.tab);renderTab(b.dataset.tab).catch(err=>notify(err.message,'error'))}});
+const tabsEl=$('#tabs');
+if(tabsEl) tabsEl.addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b){showTab(b.dataset.tab);renderTab(b.dataset.tab).catch(err=>notify(err.message,'error'))}});
 async function updateLoginProfile(profile){
   document.querySelectorAll('[data-login-profile]').forEach(x=>x.classList.toggle('active',x.dataset.loginProfile===profile));
   $('#loginForm [name=profile]').value=profile;
@@ -38,11 +39,56 @@ async function updateLoginProfile(profile){
     submit.classList.remove('open-access');
   }
 }
+const loginForm=$('#loginForm');
+if(loginForm){
+  loginForm.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const f=new FormData(e.currentTarget);
+    const submit=e.currentTarget.querySelector('button[type="submit"]');
+    if(submit) submit.disabled=true;
+    try{
+      const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});
+      state.token=d.token;
+      localStorage.setItem('chappiToken',d.token);
+      await boot();
+    }catch(err){
+      const loginError=$('#loginError');
+      if(loginError) loginError.textContent=err.message;
+      const recovery=$('#adminRecoveryStart');
+      if(recovery) recovery.hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true);
+    }finally{
+      if(submit) submit.disabled=false;
+    }
+  });
+}
 document.querySelectorAll('[data-login-profile]').forEach(b=>b.addEventListener('click',()=>updateLoginProfile(b.dataset.loginProfile)));
 updateLoginProfile('worker');
-$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});state.token=d.token;localStorage.setItem('chappiToken',d.token);await boot()}catch(err){$('#loginError').textContent=err.message;$('#adminRecoveryStart').hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true)}});
-$('#adminRecoveryStart').addEventListener('click',async()=>{const b=$('#adminRecoveryStart');b.disabled=true;try{const d=await api('/auth/recovery/request',{method:'POST',body:'{}'});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').hidden=false;}catch(err){$('#recoveryError').textContent=err.message;$('#adminRecoveryForm').hidden=false;}finally{b.disabled=false}});
-$('#adminRecoveryForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/recovery/complete',{method:'POST',body:JSON.stringify({code:f.get('code'),newPin:f.get('newPin')})});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').reset();$('#adminRecoveryForm').hidden=true;$('#adminRecoveryStart').hidden=true;$('#loginError').textContent='';$('#loginForm [name=pin]').value='';}catch(err){$('#recoveryError').textContent=err.message}});
+const recoveryStart=$('#adminRecoveryStart');
+if(recoveryStart) recoveryStart.addEventListener('click',async()=>{
+  recoveryStart.disabled=true;
+  try{
+    const d=await api('/auth/recovery/request',{method:'POST',body:'{}'});
+    $('#recoveryError').textContent=d.message;
+    $('#adminRecoveryForm').hidden=false;
+  }catch(err){
+    $('#recoveryError').textContent=err.message;
+    $('#adminRecoveryForm').hidden=false;
+  }finally{recoveryStart.disabled=false;}
+});
+const recoveryForm=$('#adminRecoveryForm');
+if(recoveryForm) recoveryForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const f=new FormData(e.currentTarget);
+  try{
+    const d=await api('/auth/recovery/complete',{method:'POST',body:JSON.stringify({code:f.get('code'),newPin:f.get('newPin')})});
+    $('#recoveryError').textContent=d.message;
+    recoveryForm.reset();
+    recoveryForm.hidden=true;
+    recoveryStart.hidden=true;
+    $('#loginError').textContent='';
+    $('#loginForm [name=pin]').value='';
+  }catch(err){$('#recoveryError').textContent=err.message}
+});
 async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=true);const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');document.querySelectorAll('[data-hide-brigadier]').forEach(x=>x.hidden=state.user.role==='brigadier');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
