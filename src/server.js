@@ -81,6 +81,17 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
   await pool.query("ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('queued','active','completed','closed','archived','cancelled'))");
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS workers_one_brigadier_idx ON workers(is_brigadier) WHERE is_brigadier=true');
+  // Repair legacy workers that were created before team membership was mandatory.
+  // New workers already receive membership in POST /api/workers; this only fills
+  // the missing initial membership and never re-adds workers explicitly removed later.
+  await pool.query(`
+    INSERT INTO team_memberships(worker_id,team_id,valid_from)
+    SELECT w.id,t.id,CURRENT_DATE
+    FROM workers w
+    CROSS JOIN LATERAL (SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1) t
+    WHERE w.active=true
+      AND NOT EXISTS (SELECT 1 FROM team_memberships m WHERE m.worker_id=w.id)
+  `);
   // The referenced table must exist before adding the foreign key on older/empty databases.
   await pool.query(`CREATE TABLE IF NOT EXISTS daily_production_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
