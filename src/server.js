@@ -930,7 +930,10 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     for(const orderId of affectedOrders) {
       const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
         COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
-      if(missing>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status IN ('queued','active') AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active' AND id<>$1)",[orderId]);
+      if(missing>0) {
+        await c.query("UPDATE orders SET status='queued',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
+        await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[orderId]);
+      }
     }
     const updated=(await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1 RETURNING *',[entry.id,reason])).rows[0];
     await audit(c,req.user.sub,'void','production_entry',entry.id,entry,updated,reason);
@@ -1000,7 +1003,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   if(!Number.isInteger(priority)||priority<0) return res.status(400).json({error:'Приоритет должен быть целым числом от 0'});
   const current=(await pool.query('SELECT status FROM orders WHERE id=$1',[req.params.id])).rows[0];
   if(!current) return res.status(404).json({error:'Заказ не найден'});
-  if(current.status==='closed') return res.status(409).json({error:'Полностью отгруженный заказ закрыт и больше не изменяется'});
+  if(!['active','queued'].includes(current.status)) return res.status(409).json({error:'Приоритет можно менять только у заказа в работе или в очереди'});
   const r=await pool.query('UPDATE orders SET priority=$1 WHERE id=$2 RETURNING *',[priority,req.params.id]);
   if(!r.rowCount) return res.status(404).json({error:'Заказ не найден'});
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'priority_change','order',$2,$3)",
