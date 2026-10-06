@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS worker_role_history (
   CHECK (valid_to IS NULL OR valid_to >= valid_from)
 );
 CREATE INDEX IF NOT EXISTS idx_worker_role_history_lookup ON worker_role_history(worker_id,valid_from,valid_to);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_worker_role_history_brigadier_day ON worker_role_history(valid_from) WHERE role='brigadier';
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   work_date DATE NOT NULL,
   worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
