@@ -72,7 +72,7 @@ async function ensureAccessProfiles() {
         ORDER BY created_at
       ) x;
     END IF;
-  END $`);
+  END $$`);
   await pool.query('ALTER TABLE orders ALTER COLUMN order_number DROP NOT NULL');
   // Migrate existing Railway DB constraint so fully shipped orders can use permanent `closed` status.
   await pool.query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
