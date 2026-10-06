@@ -434,6 +434,7 @@ app.post('/api/workers', auth, roles('admin'), asyncRoute(async (req,res) => {
 app.patch('/api/workers/:id/archive', auth, roles('admin'), asyncRoute(async (req,res) => {
   const before=(await pool.query('SELECT * FROM workers WHERE id=$1',[req.params.id])).rows[0];
   if(!before) return res.status(404).json({error:'Работник не найден'});
+  if(before.is_brigadier) return res.status(400).json({error:'Нельзя архивировать текущего бригадира. Сначала назначьте нового бригадира.'});
   const after=(await pool.query('UPDATE workers SET active=false,is_brigadier=false,archived_at=now() WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
   await pool.query('UPDATE users SET active=false WHERE worker_id=$1',[req.params.id]);
   await pool.query("UPDATE team_memberships SET valid_to=CASE WHEN valid_to IS NULL OR valid_to>CURRENT_DATE THEN CURRENT_DATE ELSE valid_to END WHERE worker_id=$1 AND valid_to IS NULL",[req.params.id]);
