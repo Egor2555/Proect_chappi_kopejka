@@ -41,7 +41,7 @@ async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hid
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';return Number(n.toFixed(3)).toString()+' м'}
-function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatMeters(p.length_m)+' м · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
+function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+' · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
 async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='fund')return fund();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
@@ -52,10 +52,10 @@ async function home(){
  if(isWorker){
    $('#home').innerHTML='<h1>Сегодня</h1>'+
      '<div class="card"><h2>Производство сегодня</h2>'+
-     simpleTable(todayRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Количество']])+
+     simpleTable(todayRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']])+
      '</div>'+
      '<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>'+
-     '<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+     '<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
  $('#home').innerHTML='<h1>Сегодня</h1><div class="grid"><div class="card"><h3>Активные и ожидающие заказы</h3><div class="stat">'+d.orders.length+'</div><small>заказов</small></div><div class="card"><h3>Позиции склада</h3><div class="stat">'+d.stock.reduce((s,x)=>s+Number(x.quantity),0)+'</div><small>изделий в остатке</small></div></div><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>';
@@ -148,10 +148,10 @@ function orderCards(rows,editable=false){
       ? 'order-active'
       : (o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued') ? 'order-next' : '');
     const items=(o.items||[]).map(i=>{
-      const length=formatMeters(i.lengthM||i.length_m);
+      const length=escapeHtml(i.length_label||formatMeters(i.lengthM||i.length_m));
       const remaining=Number(i.remaining||0);
       const done=Number(i.done||0);
-      return '<div class="order-item-row"><div class="order-size"><strong>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' × '+length+' м')+'</strong></div><div class="order-num"><span>Нужно</span><strong>'+Number(i.required||0)+'</strong></div><div class="order-num"><span>Сделано</span><strong>'+done+'</strong></div><div class="order-num"><span>Осталось</span><strong>'+(remaining>0?remaining:'✓')+'</strong></div></div>';
+      return '<div class="order-item-row"><div class="order-size"><strong>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' × '+length)+'</strong></div><div class="order-num"><span>Нужно</span><strong>'+Number(i.required||0)+'</strong></div><div class="order-num"><span>Сделано</span><strong>'+done+'</strong></div><div class="order-num"><span>Осталось</span><strong>'+(remaining>0?remaining:'✓')+'</strong></div></div>';
     }).join('');
     const activate=state.user.role==='admin'&&editable&&o.status==='queued'
       ? '<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>' : '';
@@ -220,13 +220,13 @@ async function production(){
    };
  }
 }
-function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+formatMeters(p.length_m)+' м');}
-async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м'})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
+function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+(p.length_label||formatMeters(p.length_m)));}
+async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
  const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+formatMeters(i.length_m)+' м × '+i.quantity)).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+new Date(x.shipped_at).toLocaleString('uk-UA')+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity)).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1><div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>'+
  (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><label>Номер отправки<input name="shipmentNumber" required></label><label>Заказ<select name="orderId"><option value="">Без заказа</option>'+orderOptions+'</select></label><label>Получатель<input name="recipient"></label><div id="shipmentItems"><p class="muted">Выберите заказ или оставьте «Без заказа» для отправки свободного склада.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')
  ;
@@ -287,7 +287,7 @@ async function reports(){
  const load=async()=>{
    const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
    const missing=r.missingRates||[];
-   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+Number(x.length_m)+' м'),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
+   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
    const financeVisible=state.user.role!=='worker';
    let html='<h2>Производство за '+escapeHtml(m)+'</h2>';
    html+=financeVisible
@@ -296,7 +296,7 @@ async function reports(){
    html+=financeVisible
      ? '<p><strong>Всего:</strong> '+r.total.quantity+' шт. · '+money(r.total.totalMinor)+'</p>'
      : '<p><strong>Всего:</strong> '+r.total.quantity+' шт.</p>';
-   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+formatMeters(x.length_m)+' м')).join(', ')+'</p>';
+   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m)))).join(', ')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
    if(state.user.role==='admin') { const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>'; else { html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>'; html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>'; } }
    $('#reportResult').innerHTML=html;
