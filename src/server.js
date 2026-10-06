@@ -1081,7 +1081,7 @@ app.get('/api/stock', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 
-app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_req,res) => {
+app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(async (_req,res) => {
   const orderRows=await pool.query(`
     SELECT o.id order_id,o.order_number,o.status,i.product_id,i.required_qty,
       COALESCE(sh.shipped,0)::int shipped,
@@ -1101,8 +1101,8 @@ app.get('/api/shipment-options', auth, roles('brigadier'), asyncRoute(async (_re
       FROM shipment_items si
       WHERE si.order_id=o.id AND si.product_id=i.product_id
     ) sh ON true
-    WHERE o.status IN ('active','queued')
-    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
+    WHERE o.status IN ('active','queued','completed')
+    ORDER BY CASE WHEN o.status='active' THEN 0 WHEN o.status='queued' THEN 1 ELSE 2 END,
       o.priority DESC,o.created_at ASC,o.id ASC,
       p.section_width_mm,p.section_height_mm,p.length_mm
   `);
@@ -1183,7 +1183,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
   res.json(r.rows[0]);
 }));
 
-app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (req,res) => {
   const {items=[]}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
   const normalized=items.map(item=>({
@@ -1263,8 +1263,8 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
           SELECT SUM(quantity)::int produced FROM production_allocations
           WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
         ) prod ON true
-        WHERE o.status IN ('active','queued')
-        ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
+        WHERE o.status IN ('active','queued','completed')
+        ORDER BY CASE WHEN o.status='active' THEN 0 WHEN o.status='queued' THEN 1 ELSE 2 END,
           o.priority DESC,o.created_at ASC,o.id ASC
         FOR UPDATE
       `,[item.productId])).rows;
