@@ -1180,7 +1180,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
     JOIN shipment_items si ON si.product_id=p.id
-    JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+    JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date AND s.payroll_month < ($1::date + INTERVAL '1 month')
     JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
     JOIN inventory_movements im ON im.id=sa.inventory_movement_id
     JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
@@ -1216,7 +1216,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   } else {
     const dayRows=await pool.query(`SELECT pe.work_date,pe.team_id,SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
       FROM shipment_items si
-      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date AND s.payroll_month < ($1::date + INTERVAL '1 month')
       JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
       JOIN inventory_movements im ON im.id=sa.inventory_movement_id
       JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
@@ -1228,8 +1228,8 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
         AND EXISTS (
         SELECT 1 FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
-          AND s.shipped_at >= $1::date
-          AND s.shipped_at < ($1::date + INTERVAL '1 month')
+          AND s.payroll_month >= $1::date
+          AND s.payroll_month < ($1::date + INTERVAL '1 month')
         JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
         JOIN inventory_movements im ON im.id=sa.inventory_movement_id
         JOIN production_entries pe ON pe.id=im.production_entry_id
@@ -1248,7 +1248,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
         JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type IN ('production_in','surplus_transfer')
         JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
         JOIN shipment_items si ON si.id=sa.shipment_item_id
-        JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date AND s.shipped_at < ($1::date + INTERVAL '1 month')
+        JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date AND s.payroll_month < ($1::date + INTERVAL '1 month')
         WHERE pe.voided_at IS NULL ORDER BY w.display_name`,[start])).rows
     : [];
   const visibleItems=req.user.role==='worker'
@@ -1281,8 +1281,8 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
       FROM products p
       JOIN shipment_items si ON si.product_id=p.id
-      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
-        AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date
+        AND s.payroll_month < ($1::date + INTERVAL '1 month')
       JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
       JOIN inventory_movements im ON im.id=sa.inventory_movement_id
       JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
@@ -1299,8 +1299,8 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         SELECT 1
         FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
-          AND s.shipped_at >= $1::date
-          AND s.shipped_at < ($1::date + INTERVAL '1 month')
+          AND s.payroll_month >= $1::date
+          AND s.payroll_month < ($1::date + INTERVAL '1 month')
         JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
         JOIN inventory_movements im ON im.id=sa.inventory_movement_id
         JOIN production_entries pe ON pe.id=im.production_entry_id
@@ -1312,8 +1312,8 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const prodDays=(await c.query(`SELECT pe.work_date,pe.team_id,SUM(sa.quantity)::int quantity,
       SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
       FROM shipment_items si
-      JOIN shipments s ON s.id=si.shipment_id AND s.shipped_at >= $1::date
-        AND s.shipped_at < ($1::date + INTERVAL '1 month')
+      JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date
+        AND s.payroll_month < ($1::date + INTERVAL '1 month')
       JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
       JOIN inventory_movements im ON im.id=sa.inventory_movement_id
       JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
