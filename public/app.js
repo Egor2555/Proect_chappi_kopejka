@@ -230,9 +230,10 @@ async function production(target='#production'){
    '<div class="daily-report-head"><div><h2>Ежедневный отчёт</h2><p class="daily-report-date">'+escapeHtml(formatDateDMY(date))+'</p></div></div>'+
    '<div id="dailyReportWorkContent">'+
      '<div class="daily-report-section"><h3>Кто работал</h3><div class="daily-report-workers">'+(workerRows||'<div class="empty">Работники не добавлены.</div>')+'</div></div>'+
-     '<div class="daily-report-section"><div class="daily-report-section-title"><h3>Произведено</h3><button type="button" id="addDailySize" class="secondary">+ Добавить типоразмер</button></div>'+
+     '<div class="daily-report-section"><h3>Произведено</h3>'+
        '<div id="dailyDefaultRows" class="daily-report-products">'+(defaultRows||'<div class="empty">Нет позиций активного заказа.</div>')+'</div>'+
        '<div id="dailyExtraRows" class="daily-report-products"></div>'+
+       '<button type="button" id="addDailySize" class="secondary daily-add-size">+ Добавить типоразмер</button>'+
      '</div>'+
    '</div>'+
    '<div id="dailyReportSummary" class="daily-report-summary"></div>'+
