@@ -575,6 +575,29 @@ app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (
   res.json(result);
 }));
 
+app.delete('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const workerId=String(req.params.id);
+  const effectiveFrom=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const result=await tx(async c=>{
+    const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
+    if(!w) throw new Error('Работник не найден или архивирован');
+    if(!w.is_brigadier) throw new Error('Работник не является текущим бригадиром');
+    const history=(await c.query("SELECT id,valid_from FROM worker_role_history WHERE worker_id=$1 AND role='brigadier' AND valid_to IS NULL ORDER BY valid_from DESC LIMIT 1 FOR UPDATE",[workerId])).rows[0];
+    if(history){
+      if(String(history.valid_from)===effectiveFrom){
+        await c.query('DELETE FROM worker_role_history WHERE id=$1',[history.id]);
+      }else{
+        await c.query("UPDATE worker_role_history SET valid_to=($1::date - INTERVAL '1 day')::date WHERE id=$2",[effectiveFrom,history.id]);
+      }
+    }
+    const updated=(await c.query('UPDATE workers SET is_brigadier=false WHERE id=$1 RETURNING *',[workerId])).rows[0];
+    await c.query("UPDATE users SET worker_id=NULL WHERE role='brigadier' AND active=true AND worker_id=$1",[workerId]);
+    await audit(c,req.user.sub,'remove_brigadier','worker',workerId,w,updated);
+    return updated;
+  });
+  res.json(result);
+}));
+
 app.get('/api/daily-reports', auth, roles('brigadier','admin'), asyncRoute(async (req,res) => {
   const date=String(req.query.date||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:'Укажите дату YYYY-MM-DD'});
