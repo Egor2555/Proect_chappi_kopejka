@@ -828,7 +828,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
     const order=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
     if(!order) throw new Error('Заказ не найден');
     if(['cancelled','archived','closed'].includes(order.status)) throw new Error('Закрытый, отменённый или архивный заказ нельзя изменить');
-    const shipmentCount=Number((await c.query('SELECT COUNT(*)::int n FROM shipments WHERE order_id=$1',[orderId])).rows[0].n);
+    const shipmentCount=Number((await c.query('SELECT COUNT(DISTINCT si.shipment_id)::int n FROM shipment_items si WHERE si.order_id=$1',[orderId])).rows[0].n);
     // Already shipped units remain historical facts; only the unshipped remainder is cancelled.
     const reservations=(await c.query(`SELECT r.id,r.reference_id,r.quantity_delta,
         (-r.quantity_delta-COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa
