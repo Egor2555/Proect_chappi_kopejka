@@ -300,6 +300,7 @@ app.post('/api/auth/recovery/complete', recoveryVerifyLimiter, asyncRoute(async 
 }));
 
 app.get('/api/auth/profile-status', asyncRoute(async (req,res) => {
+  res.set('Cache-Control','no-store');
   const row = (await pool.query("SELECT pin_enabled FROM users WHERE active=true AND role='worker' LIMIT 1")).rows[0];
   res.json({workerPinEnabled: !!row?.pin_enabled});
 }));
