@@ -1028,8 +1028,8 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
     if(orderId){
       const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
       if(!order) throw new Error('Заказ не найден');
-      if(['cancelled','archived'].includes(order.status))
-        throw new Error('Отменённый или архивный заказ нельзя отгружать');
+      if(['cancelled','archived','closed'].includes(order.status))
+        throw new Error('Отменённый, полностью отгруженный или архивный заказ нельзя отгружать');
     }
     const sh=(await c.query('INSERT INTO shipments(shipment_number,order_id,recipient,note,created_by,payroll_month) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
       [shipmentNumber,orderId,recipient,note,req.user.sub,payrollMonthText])).rows[0];
