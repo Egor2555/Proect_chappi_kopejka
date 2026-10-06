@@ -637,7 +637,12 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
         JOIN workers w ON w.id=m.worker_id
         WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3
           AND (m.valid_to IS NULL OR m.valid_to>=$3)
-          AND w.active=true AND w.is_brigadier=false`,
+          AND w.active=true
+          AND NOT EXISTS (
+            SELECT 1 FROM attendance_entries ae
+            WHERE ae.worker_id=$1 AND ae.work_date=$3 AND ae.was_brigadier=true
+          )
+          AND NOT (w.is_brigadier=true AND m.valid_from=$3)`,
         [workerId,teamId,workDate]);
       if(!member.rowCount) throw new Error('Работник не состоит в выбранной бригаде на эту дату или является бригадиром');
     }
