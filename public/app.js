@@ -65,8 +65,11 @@ async function home(){
  const d=await api('/dashboard');
  const isWorker=state.user.role==='worker';
  let report=null;
- try{report=await api('/daily-reports?date='+localDate())}catch(e){report={exists:false,workDate:localDate()};}
- const daily=dailyProductionCard(report);
+ let daily='';
+ if(isWorker){
+   try{report=await api('/daily-reports?date='+localDate())}catch(e){report={exists:false,workDate:localDate()};}
+   daily=dailyProductionCard(report);
+ }
  if(isWorker){
    const monthRows=(d.month||[]).filter(x=>Number(x.quantity)>0);
    const monthTotal=monthRows.reduce((sum,x)=>sum+Number(x.quantity||0),0);
@@ -203,60 +206,116 @@ function orderCards(rows,editable=false){
 function simpleTable(rows,cols){if(!rows.length)return '<div class="empty">Пока нет данных</div>';return '<div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+escapeHtml(r[c[0]])+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'}
 async function production(target='#production'){
  const targetEl=()=>$(target);
- if(state.user.role!=='brigadier'){ targetEl().innerHTML='';return; }
+ if(state.user.role!=='brigadier'){targetEl().innerHTML='';return;}
  const date=localDate();
- const [report,orders,workers]=await Promise.all([api('/daily-reports?date='+date),api('/orders'),api('/team-members?date='+date)]);
+ const [report,orders,workers]=await Promise.all([
+   api('/daily-reports?date='+date),
+   api('/orders'),
+   api('/team-members?date='+date)
+ ]);
  const first=orders.find(o=>o.status==='active')||orders.find(o=>o.status==='queued');
- const second=orders.filter(o=>o!==first&&['active','queued'].includes(o.status)).find(o=>o.status==='queued');
  const defaultProducts=[];
- for(const o of [first,second]) for(const item of (o?.items||[])){const p=state.products.find(x=>x.id===(item.productId||item.product_id));if(p&&!defaultProducts.some(x=>x.id===p.id))defaultProducts.push(p);}
- const existing=new Map((report.items||[]).map(x=>[String(x.product_id),x]));
- const rows=defaultProducts.map((p,idx)=>{
-   const ex=existing.get(String(p.id));const tone=idx===0?'order-active':idx===1?'order-next':'';
-   return '<div class="row productionReportItem '+tone+'"><label><strong>'+formatProduct(p)+'</strong><input data-product-id="'+p.id+'" type="number" min="0" step="1" inputmode="numeric" value="'+(ex?.quantity||'')+'" placeholder="Количество"></label></div>';
- }).join('');
+ for(const item of (first?.items||[])){
+   const p=state.products.find(x=>x.id===(item.productId||item.product_id));
+   if(p&&!defaultProducts.some(x=>x.id===p.id))defaultProducts.push(p);
+ }
+ const existing=new Map((report.items||[]).map(x=>[String(x.product_id||x.productId),x]));
  const checked=new Set((report.workerIds||[]).map(String));
- const brigadier=workers.find(w=>w.is_brigadier&&w.active);
-  const workerRows=workers.filter(w=>!w.is_brigadier&&w.active).map(w=>'<label class="check-row"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'>'+escapeHtml(w.display_name)+'</label>').join('');
- targetEl().innerHTML='<div class="card daily-report-window"><h2>Ежедневный отчёт</h2><p><strong>Дата:</strong> '+formatDateDMY(date)+'</p>'+(brigadier?'<p><strong>Бригадир:</strong> '+escapeHtml(brigadier.display_name)+'</p>':'')+'<p class="muted">🟢 первый актуальный заказ · 🟡 второй актуальный заказ</p><div id="dailyDefaultRows">'+(rows||'<p class="empty">Нет активных позиций заказов.</p>')+'</div><div id="dailyExtraRows"></div><button type="button" id="addDailySize"'+(report.exists?' hidden':'')+'>+ Добавить размер</button><button type="button" id="markDayOff" class="secondary"'+(report.exists?' hidden':'')+'>Отметить выходной</button></div><div class="card"><h2>Кто работал сегодня</h2><div class="checklist">'+workerRows+'</div></div><div class="card"><button id="saveDailyReport"'+(report.exists?' hidden':'')+'>'+ (report.exists?'Сохранить изменения':'Сохранить отчёт')+'</button></div><div id="dailyResult"></div>';
+ const workerRows=workers.filter(w=>!w.is_brigadier&&w.active).map(w=>'<label class="daily-report-worker"><input type="checkbox" value="'+w.id+'" '+(checked.has(String(w.id))?'checked':'')+'><span>'+escapeHtml(w.display_name)+'</span></label>').join('');
+ const defaultRows=defaultProducts.map(p=>{
+   const ex=existing.get(String(p.id));
+   return '<div class="daily-report-product"><span>'+formatProduct(p)+'</span><input data-product-id="'+p.id+'" type="number" min="0" step="1" inputmode="numeric" value="'+(ex?.quantity||'')+'" placeholder="Количество"></div>';
+ }).join('');
+ targetEl().innerHTML='<div class="card daily-report-window">'+
+   '<div class="daily-report-head"><div><h2>Ежедневный отчёт</h2><p class="daily-report-date">'+escapeHtml(formatDateDMY(date))+'</p></div></div>'+
+   '<div class="daily-report-section daily-report-status">'+
+     '<h3>Статус дня</h3>'+
+     '<div class="daily-report-status-actions"><button type="button" id="dailyWorkDay" class="secondary">Рабочий день</button><button type="button" id="dailyDayOff" class="secondary">Выходной</button></div>'+
+   '</div>'+
+   '<div id="dailyReportWorkContent">'+
+     '<div class="daily-report-section"><h3>Кто работал</h3><div class="daily-report-workers">'+(workerRows||'<div class="empty">Работники не добавлены.</div>')+'</div></div>'+
+     '<div class="daily-report-section"><div class="daily-report-section-title"><h3>Произведено</h3><button type="button" id="addDailySize" class="secondary">+ Добавить типоразмер</button></div>'+
+       '<div id="dailyDefaultRows" class="daily-report-products">'+(defaultRows||'<div class="empty">Нет позиций активного заказа.</div>')+'</div>'+
+       '<div id="dailyExtraRows" class="daily-report-products"></div>'+
+     '</div>'+
+   '</div>'+
+   '<div id="dailyReportSummary" class="daily-report-summary"></div>'+
+   '<button type="button" id="saveDailyReport">Сохранить отчёт</button>'+
+ '</div>';
+ const workContent=$('#dailyReportWorkContent');
+ const summary=$('#dailyReportSummary');
+ const save=$('#saveDailyReport');
+ const workBtn=$('#dailyWorkDay');
+ const offBtn=$('#dailyDayOff');
  const extra=$('#dailyExtraRows');
  const addExtraRow=(selectedProductId='',quantity='')=>{
    const used=[...document.querySelectorAll('#dailyDefaultRows [data-product-id],#dailyExtraRows select')].map(x=>x.dataset?.productId||x.value);
    const available=state.products.filter(p=>p.active&&(!used.includes(String(p.id))||String(p.id)===String(selectedProductId)));
-   if(!available.length){notify('Нет других разрешённых типоразмеров','error');return}
-   const row=document.createElement('div');row.className='row dailyExtra';
-   row.innerHTML='<label>Типоразмер<select>'+available.map(p=>'<option value="'+p.id+'" '+(String(p.id)===String(selectedProductId)?'selected':'')+'>'+formatProduct(p)+'</option>').join('')+'</select></label><label>Количество<input type="number" min="1" step="1" value="'+escapeHtml(quantity||'')+'" required></label><button type="button">Убрать</button>';
-   row.querySelector('button').onclick=()=>row.remove();extra.append(row);
+   if(!available.length){notify('Нет других доступных типоразмеров','error');return;}
+   const row=document.createElement('div');row.className='daily-report-product daily-extra-row';
+   row.innerHTML='<select aria-label="Типоразмер">'+available.map(p=>'<option value="'+p.id+'" '+(String(p.id)===String(selectedProductId)?'selected':'')+'>'+formatProduct(p)+'</option>').join('')+'</select><input type="number" min="0" step="1" inputmode="numeric" value="'+escapeHtml(quantity||'')+'" placeholder="Количество"><button type="button" class="secondary">Убрать</button>';
+   row.querySelector('button').onclick=()=>row.remove();
+   extra.append(row);
  };
- $('#addDailySize').onclick=()=>addExtraRow();
- $('#markDayOff').onclick=async()=>{if(!confirm('Отметить текущий день как выходной?'))return;try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items:[],workerIds:[],dayOff:true})});notify('День отмечен как выходной','success');await production(target)}catch(e){notify(e.message,'error')}};
+ const setDayOff=async()=>{
+   if(report.exists&&!report.dayOff)return;
+   try{
+     await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items:[],workerIds:[],dayOff:true})});
+     notify('День отмечен как выходной','success');
+     await production(target);
+   }catch(e){notify(e.message,'error')}
+ };
+ const showSummary=()=>{
+   const dayOff=!!report.dayOff;
+   const items=report.items||[];
+   const names=(report.workerIds||[]).map(id=>workers.find(w=>String(w.id)===String(id))?.display_name).filter(Boolean);
+   workContent.hidden=dayOff;
+   workBtn.hidden=false;offBtn.hidden=false;
+   save.hidden=true;
+   workBtn.disabled=true;offBtn.disabled=true;
+   summary.innerHTML=dayOff
+     ? '<div><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div>'
+     : '<div><strong>Отчёт за день внесён</strong><span>'+(items.length?items.map(x=>escapeHtml(formatProduct(x))+' — '+Number(x.quantity||0)+' шт.').join('<br>'):'В РАБОТЕ — производства не было')+'</span>'+(names.length?'<span>Работали: '+names.map(escapeHtml).join(', ')+'</span>':'')+'</div>';
+   const edit=document.createElement('button');edit.type='button';edit.className='secondary';edit.textContent='Изменить отчёт';
+   summary.append(edit);
+   edit.onclick=()=>{
+     report.exists=false;
+     workContent.hidden=false;
+     workBtn.hidden=false;offBtn.hidden=false;
+     workBtn.disabled=false;offBtn.disabled=false;
+     save.hidden=false;
+     summary.replaceChildren();
+     document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.daily-report-workers input').forEach(x=>x.disabled=false);
+   };
+ };
  if(report.exists){
    const defaultIds=new Set(defaultProducts.map(p=>String(p.id)));
    for(const item of (report.items||[])){
      const pid=String(item.product_id||item.productId||'');
-     if(pid&&!defaultIds.has(pid)) addExtraRow(pid,item.quantity);
+     if(pid&&!defaultIds.has(pid))addExtraRow(pid,item.quantity);
    }
+   showSummary();
+ }else{
+   summary.replaceChildren();
+   save.hidden=false;
  }
- $('#saveDailyReport').onclick=async()=>{
+ $('#addDailySize').onclick=()=>addExtraRow();
+ workBtn.onclick=()=>{workContent.hidden=false;save.hidden=false;summary.replaceChildren();};
+ offBtn.onclick=setDayOff;
+ save.onclick=async()=>{
    const items=[];
-   document.querySelectorAll('#dailyDefaultRows [data-product-id]').forEach(inp=>{const q=Number(inp.value||0);if(q>0)items.push({productId:inp.dataset.productId,quantity:q})});
-   extra.querySelectorAll('.dailyExtra').forEach(row=>{const q=Number(row.querySelector('input').value||0);if(q>0)items.push({productId:row.querySelector('select').value,quantity:q})});
-   const workerIds=[...document.querySelectorAll('.checklist input[type=checkbox]:checked')].map(x=>x.value);
-   if(!workerIds.length){notify('Отметьте работников, которые работали','error');return}
-   try{await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items,workerIds})});notify('Отчёт сохранён','success');await production(target)}catch(e){notify(e.message,'error')}
+   document.querySelectorAll('#dailyDefaultRows [data-product-id]').forEach(inp=>{const q=Number(inp.value||0);if(q>0)items.push({productId:inp.dataset.productId,quantity:q});});
+   extra.querySelectorAll('.daily-extra-row').forEach(row=>{const q=Number(row.querySelector('input').value||0);if(q>0)items.push({productId:row.querySelector('select').value,quantity:q});});
+   const workerIds=[...document.querySelectorAll('.daily-report-workers input[type=checkbox]:checked')].map(x=>x.value);
+   if(!workerIds.length){notify('Отметьте работников, которые работали','error');return;}
+   try{
+     await api('/daily-reports',{method:'POST',body:JSON.stringify({workDate:date,items,workerIds})});
+     notify('Отчёт сохранён','success');
+     await production(target);
+   }catch(e){notify(e.message,'error');}
  };
- if(report.exists){
-   document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.checklist input').forEach(x=>x.disabled=true);
-   const result='<div class="card success"><h2>'+((report.items||[]).length?'Отчёт за день внесён':'🟢 В РАБОТЕ — производства не было')+'</h2>'+report.items.map(x=>'<p><strong>'+formatProduct(x)+'</strong> — '+x.quantity+' шт.</p>').join('')+'<button id="editDaily" type="button" class="danger">Изменить</button></div>';
-   $('#dailyResult').innerHTML=result;
-   $('#editDaily').onclick=()=>{
-     document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.checklist input').forEach(x=>x.disabled=false);
-     $('#addDailySize').hidden=false;
-     $('#saveDailyReport').hidden=false;
-     $('#dailyResult').innerHTML='<div class="card"><p class="muted">Режим редактирования включён. После сохранения отчёт снова станет доступен только для просмотра.</p></div>';
-   };
- }
 }
+
 function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+(p.length_label||formatMeters(p.length_m)));}
 async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
