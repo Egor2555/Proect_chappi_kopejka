@@ -1145,6 +1145,7 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
 
 app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {orderId=null,recipient='',note='',items=[]}=req.body;
+  if(!orderId) return res.status(400).json({error:'Отгрузка возможна только по заказу'});
   if(!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите позиции отгрузки'});
   const shipmentProductIds=items.map(item=>String(item?.productId||''));
   if(shipmentProductIds.some(id=>!id) || new Set(shipmentProductIds).size!==shipmentProductIds.length)
