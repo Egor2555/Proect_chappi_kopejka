@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS production_entries (
 );
 
 CREATE TABLE IF NOT EXISTS attendance_entries (
+
+
+CREATE TABLE IF NOT EXISTS worker_role_history (
+  id BIGSERIAL PRIMARY KEY,
+  worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
+  role TEXT NOT NULL CHECK (role IN ('worker','brigadier')),
+  valid_from DATE NOT NULL,
+  valid_to DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (valid_to IS NULL OR valid_to >= valid_from)
+);
+CREATE INDEX IF NOT EXISTS idx_worker_role_history_lookup ON worker_role_history(worker_id,valid_from,valid_to);
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   work_date DATE NOT NULL,
   worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
