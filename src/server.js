@@ -732,18 +732,28 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
         FROM inventory_movements WHERE id=$6`,
         [freeReserved,orderId,reservation.reference_id,req.user.sub,'Возврат незатребованного резерва при отмене заказа',reservation.id]);
     }
-    await c.query(`UPDATE production_allocations a
-      SET voided_at=now()
-      WHERE a.order_id=$1 AND a.voided_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1
+    // При частичной отгрузке нельзя просто оставить всю производственную
+    // привязку к отменённому заказу: неотгруженный остаток должен вернуться
+    // в свободный склад, а уже отгруженная часть — остаться историей заказа.
+    const allocationsToRelease=(await c.query(`SELECT a.id,a.quantity,a.production_entry_id,
+        COALESCE((SELECT SUM(sa.quantity)::int
           FROM shipment_allocations sa
           JOIN inventory_movements im ON im.id=sa.inventory_movement_id
           JOIN shipment_items si ON si.id=sa.shipment_item_id
           JOIN shipments s ON s.id=si.shipment_id
           WHERE im.production_entry_id=a.production_entry_id
-            AND s.order_id=a.order_id
-        )`,[orderId]);
+            AND s.order_id=a.order_id),0)::int AS shipped
+      FROM production_allocations a
+      WHERE a.order_id=$1 AND a.voided_at IS NULL
+      FOR UPDATE`,[orderId])).rows;
+    for(const allocation of allocationsToRelease){
+      const shipped=Math.min(Number(allocation.quantity),Math.max(0,Number(allocation.shipped)));
+      if(shipped<=0){
+        await c.query('UPDATE production_allocations SET voided_at=now() WHERE id=$1',[allocation.id]);
+      } else if(shipped<Number(allocation.quantity)){
+        await c.query('UPDATE production_allocations SET quantity=$2 WHERE id=$1',[allocation.id,shipped]);
+      }
+    }
     const before=order;
     const after=(await c.query(`UPDATE orders SET status='cancelled',completed_at=NULL,cancelled_at=now(),cancel_reason=$2
       WHERE id=$1 RETURNING *`,[orderId,reason])).rows[0];
