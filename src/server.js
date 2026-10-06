@@ -909,7 +909,7 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
   }
   // If the active order was completed by this production, promote the next queued order.
   await c.query(`UPDATE orders SET status='active' WHERE id=(
-    SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+    SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC,id ASC LIMIT 1
   ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
   return {allocations,stockRemaining:remaining};
 }
