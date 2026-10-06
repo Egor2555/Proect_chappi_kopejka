@@ -1219,8 +1219,9 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       JOIN rates r ON r.product_id=si.product_id AND r.period_month=$1::date
       GROUP BY pe.work_date,pe.team_id`,[start]);
     const dayAttendance=await pool.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count
-      FROM attendance_entries a
-      WHERE EXISTS (
+      FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+      WHERE w.is_brigadier=false
+        AND EXISTS (
         SELECT 1 FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
           AND s.shipped_at >= $1::date
