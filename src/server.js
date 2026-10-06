@@ -1250,10 +1250,17 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
       }
 
       const orderRows=(await c.query(`
+        WITH locked_orders AS (
+          SELECT o.id,o.status,o.priority,o.created_at
+          FROM orders o
+          JOIN order_items i ON i.order_id=o.id AND i.product_id=$1
+          WHERE o.status IN ('active','queued','completed')
+          FOR UPDATE OF o
+        )
         SELECT o.id,o.status,o.priority,o.created_at,i.required_qty,
           COALESCE(sh.shipped,0)::int shipped,
           COALESCE(prod.produced,0)::int produced
-        FROM orders o
+        FROM locked_orders o
         JOIN order_items i ON i.order_id=o.id AND i.product_id=$1
         LEFT JOIN LATERAL(
           SELECT SUM(si.quantity)::int shipped FROM shipment_items si
@@ -1263,10 +1270,8 @@ app.post('/api/shipments', auth, roles('admin','brigadier'), asyncRoute(async (r
           SELECT SUM(quantity)::int produced FROM production_allocations
           WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
         ) prod ON true
-        WHERE o.status IN ('active','queued','completed')
         ORDER BY CASE WHEN o.status='active' THEN 0 WHEN o.status='queued' THEN 1 ELSE 2 END,
           o.priority DESC,o.created_at ASC,o.id ASC
-        FOR UPDATE
       `,[item.productId])).rows;
 
       let left=item.quantity;
