@@ -46,6 +46,29 @@ async function ensureAccessProfiles() {
   await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
   await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
   await pool.query('ALTER TABLE attendance_entries ADD COLUMN IF NOT EXISTS was_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query(`CREATE TABLE IF NOT EXISTS worker_role_history (
+    id BIGSERIAL PRIMARY KEY,
+    worker_id UUID NOT NULL REFERENCES workers(id) ON DELETE RESTRICT,
+    role TEXT NOT NULL CHECK (role IN ('worker','brigadier')),
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+  )`);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_worker_role_history_lookup ON worker_role_history(worker_id,valid_from,valid_to)');
+  await pool.query(`DO $ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM worker_role_history) THEN
+      INSERT INTO worker_role_history(worker_id,role,valid_from,valid_to)
+      SELECT worker_id,'brigadier',effective_from,
+        lead(effective_from) OVER (PARTITION BY worker_id ORDER BY effective_from)-1
+      FROM (
+        SELECT (after_data->>'id')::uuid AS worker_id,created_at::date AS effective_from
+        FROM audit_log
+        WHERE action='assign_brigadier' AND entity_type='worker'
+        ORDER BY created_at
+      ) x;
+    END IF;
+  END $`);
   await pool.query('ALTER TABLE orders ALTER COLUMN order_number DROP NOT NULL');
   // Migrate existing Railway DB constraint so fully shipped orders can use permanent `closed` status.
   await pool.query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
@@ -489,7 +512,8 @@ app.get('/api/team-members', auth, asyncRoute(async (req,res) => {
   const team=(await pool.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
   if(!team) return res.status(500).json({error:'Коллектив не настроен'});
   const teamId=team.id;
-  const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier
+  const r=await pool.query(`SELECT w.id,w.display_name,w.active,
+    COALESCE((SELECT h.role='brigadier' FROM worker_role_history h WHERE h.worker_id=w.id AND h.valid_from<=$2 AND (h.valid_to IS NULL OR h.valid_to>=$2) ORDER BY h.valid_from DESC LIMIT 1),w.is_brigadier) AS is_brigadier
     FROM workers w JOIN team_memberships m ON m.worker_id=w.id
     WHERE m.team_id=$1 AND m.valid_from<=$2 AND (m.valid_to IS NULL OR m.valid_to>=$2)
     ORDER BY w.display_name`,[teamId,date]);
@@ -516,9 +540,13 @@ app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
 
 app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (req,res) => {
   const workerId=String(req.params.id);
+  const effectiveFrom=String(req.body?.effectiveFrom||new Date().toISOString().slice(0,10));
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveFrom)) return res.status(400).json({error:'Укажите дату назначения бригадира'});
   const result=await tx(async c=>{
     const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
     if(!w) throw new Error('Работник не найден или архивирован');
+    await c.query('UPDATE worker_role_history SET valid_to=($1::date - INTERVAL \'1 day\')::date WHERE role=\'brigadier\' AND valid_to IS NULL AND valid_from < $1::date',[effectiveFrom]);
+    await c.query('INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,\'brigadier\',$2)',[workerId,effectiveFrom]);
     await c.query('UPDATE workers SET is_brigadier=false WHERE is_brigadier=true');
     const updated=(await c.query('UPDATE workers SET is_brigadier=true WHERE id=$1 RETURNING *',[workerId])).rows[0];
     const brig=(await c.query("SELECT id FROM users WHERE role='brigadier' AND active=true LIMIT 1")).rows[0];
@@ -556,11 +584,11 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
     if(monthState?.brigadier_closed_at && !monthState.reopened_at) throw new Error('Рабочая часть месяца уже закрыта бригадиром. Сначала откройте месяц снова.');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Месяц уже рассчитан и окончательно закрыт');
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:daily-report:' || $1 || ':' || $2))",[workDate,team.id]);
-    const brig=(await c.query('SELECT id FROM workers WHERE is_brigadier=true AND active=true LIMIT 1')).rows[0];
-    if(!brig) throw new Error('Администратор ещё не назначил бригадира');
-    if(workerIds.some(id=>String(id)===String(brig.id))) throw new Error('Бригадир не участвует в зарплатном составе');
+    const brig=(await c.query(`SELECT worker_id FROM worker_role_history WHERE role='brigadier' AND valid_from<=$1 AND (valid_to IS NULL OR valid_to>=$1) ORDER BY valid_from DESC LIMIT 1`,[workDate])).rows[0];
+    if(!brig) throw new Error('На эту дату бригадир не определён в истории должностей');
+    if(workerIds.some(id=>String(id)===String(brig.worker_id))) throw new Error('Бригадир не участвует в зарплатном составе');
     for(const workerId of workerIds){
-      const ok=(await c.query('SELECT 1 FROM team_memberships WHERE worker_id=$1 AND team_id=$2 AND valid_from<=$3 AND (valid_to IS NULL OR valid_to>=$3) AND EXISTS (SELECT 1 FROM workers WHERE id=$1 AND active=true AND is_brigadier=false)',[workerId,team.id,workDate])).rowCount;
+      const ok=(await c.query(`SELECT 1 FROM team_memberships m WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3 AND (m.valid_to IS NULL OR m.valid_to>=$3) AND EXISTS (SELECT 1 FROM workers w WHERE w.id=$1 AND w.active=true) AND NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=$1 AND h.role='brigadier' AND h.valid_from<=$3 AND (h.valid_to IS NULL OR h.valid_to>=$3))`,[workerId,team.id,workDate])).rowCount;
       if(!ok) throw new Error('В списке есть работник, который не состоит в коллективе на эту дату');
     }
     if(!workerIds.length) throw new Error('Отметьте хотя бы одного работника');
@@ -633,17 +661,7 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount)
       throw new Error('Этот месяц уже закрыт. Посещаемость изменять нельзя.');
     for(const workerId of workerIds){
-      const member=await c.query(`SELECT 1 FROM team_memberships m
-        JOIN workers w ON w.id=m.worker_id
-        WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3
-          AND (m.valid_to IS NULL OR m.valid_to>=$3)
-          AND w.active=true
-          AND NOT EXISTS (
-            SELECT 1 FROM attendance_entries ae
-            WHERE ae.worker_id=$1 AND ae.work_date=$3 AND ae.was_brigadier=true
-          )
-          AND NOT (w.is_brigadier=true AND m.valid_from=$3)`,
-        [workerId,teamId,workDate]);
+      const member=await c.query(`SELECT 1 FROM team_memberships m JOIN workers w ON w.id=m.worker_id WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3 AND (m.valid_to IS NULL OR m.valid_to>=$3) AND w.active=true AND NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=$1 AND h.role='brigadier' AND h.valid_from<=$3 AND (h.valid_to IS NULL OR h.valid_to>=$3))`,[workerId,teamId,workDate]);
       if(!member.rowCount) throw new Error('Работник не состоит в выбранной бригаде на эту дату или является бригадиром');
     }
     const before=(await c.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId])).rows;
