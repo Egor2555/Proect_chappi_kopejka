@@ -10,7 +10,7 @@ const {
 function emptyBackup() {
   const tables = {};
   const required = [
-    'workers','teams','team_memberships','products','rates','orders','order_items',
+    'workers','teams','team_memberships','worker_role_history','month_states','daily_production_reports','products','rates','orders','order_items',
     'monthly_worker_earnings','production_entries','production_allocations',
     'attendance_entries','inventory_movements','shipments','shipment_items',
     'shipment_allocations','payment_entries','monthly_closures','penny_events',
