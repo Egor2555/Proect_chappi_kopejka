@@ -547,6 +547,8 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
     const team=(await c.query("SELECT id FROM teams WHERE active=true ORDER BY created_at,id LIMIT 1")).rows[0];
     if(!team) throw new Error('Коллектив не настроен');
     const month=String(workDate).slice(0,7)+'-01';
+    const monthState=(await c.query('SELECT brigadier_closed_at,reopened_at FROM month_states WHERE period_month=$1',[month])).rows[0];
+    if(monthState?.brigadier_closed_at && !monthState.reopened_at) throw new Error('Рабочая часть месяца уже закрыта бригадиром. Сначала откройте месяц снова.');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount) throw new Error('Месяц уже рассчитан и окончательно закрыт');
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:daily-report:' || $1 || ':' || $2))",[workDate,team.id]);
     const brig=(await c.query('SELECT id FROM workers WHERE is_brigadier=true AND active=true LIMIT 1')).rows[0];
@@ -616,6 +618,8 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
     // Serialize attendance replacement for the same brigade/day so two saves cannot overwrite each other mid-transaction.
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:attendance:' || $1 || ':' || $2))",[workDate,teamId]);
     const month=String(workDate).slice(0,7)+'-01';
+    const monthState=(await c.query('SELECT brigadier_closed_at,reopened_at FROM month_states WHERE period_month=$1',[month])).rows[0];
+    if(monthState?.brigadier_closed_at && !monthState.reopened_at) throw new Error('Рабочая часть месяца уже закрыта бригадиром. Сначала откройте месяц снова.');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[month])).rowCount)
       throw new Error('Этот месяц уже закрыт. Посещаемость изменять нельзя.');
     for(const workerId of workerIds){
