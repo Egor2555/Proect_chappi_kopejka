@@ -74,11 +74,16 @@ async function must(path, options, expected=200) {
   const stock=await must('/api/stock',{token:admin});
   assert.equal(stock.find(x=>x.id===product.id).quantity,0);
 
-  await must('/api/shipments',{token:brigadier,method:'POST',body:{shipmentNumber:'CI-SHIP-1',orderId:orderA.id,recipient:'CI recipient',items:[{productId:product.id,quantity:2}]}},201);
+  const createdShipment=await must('/api/shipments',{token:brigadier,method:'POST',body:{items:[{productId:product.id,quantity:3}]}},201);
   const stockAfter=await must('/api/stock',{token:admin});
   assert.equal(stockAfter.find(x=>x.id===product.id).quantity,0);
   const shipments=await must('/api/shipments',{token:brigadier});
   assert.equal(shipments.length,1);
+  assert.equal(shipments[0].id,createdShipment.id);
+  assert.deepEqual(shipments[0].items.map(x=>({order_id:x.order_id,quantity:Number(x.quantity)})),[
+    {order_id:orderA.id,quantity:2},
+    {order_id:orderB.id,quantity:1}
+  ]);
   assert.equal(String(shipments[0].payroll_month).slice(0,10),month);
   await must('/api/payments',{token:admin,method:'POST',body:{shipmentId:shipments[0].id,amountMinor:250,note:'CI credited'}},201);
   const payments=await must('/api/payments',{token:admin});
