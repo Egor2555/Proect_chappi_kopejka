@@ -51,10 +51,10 @@ function dailyProductionCard(report){
  const status=!report.exists?'missing':(report.dayOff?'day-off':(report.items?.length?'ready':'in-work'));
  const cls='daily-production-card '+status;
  if(status==='missing') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(formatDateDMY(report.workDate))+'</p><div class="daily-empty">⚠️<strong>Информации за текущий день ещё нет.</strong><span>Бригадир ещё не внёс данные.</span></div></div>';
- if(status==='day-off') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p><div class="daily-empty"><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div></div>';
+ if(status==='day-off') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(formatDateDMY(report.workDate))+'</p><div class="daily-empty"><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div></div>';
  const rows=(report.items||[]).map(x=>'<div class="daily-row"><span>'+formatProduct(x)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('');
  const names=(report.workerIds||[]).map(id=>state.workers.find(w=>String(w.id)===String(id))?.display_name).filter(Boolean);
- return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p>'+((report.items||[]).length?'<div class="daily-rows">'+rows+'</div>':'<div class="daily-empty"><strong>В РАБОТЕ</strong><span>Производства пока не было.</span></div>')+(names.length?'<div class="daily-workers"><span>Работали:</span> '+names.map(escapeHtml).join(', ')+'</div>':'')+'</div>';
+ return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(formatDateDMY(report.workDate))+'</p>'+((report.items||[]).length?'<div class="daily-rows">'+rows+'</div>':'<div class="daily-empty"><strong>В РАБОТЕ</strong><span>Производства пока не было.</span></div>')+(names.length?'<div class="daily-workers"><span>Работали:</span> '+names.map(escapeHtml).join(', ')+'</div>':'')+'</div>';
 }
 async function home(){
  const d=await api('/dashboard');
@@ -190,7 +190,7 @@ function orderCards(rows,editable=false){
       ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>' : '';
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled','closed'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
-    const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':'⚪ В ОЧЕРЕДИ'):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='closed'?'🔒 ЗАКРЫТ':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
+    const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':''):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='closed'?'🔒 ЗАКРЫТ':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
     return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br>'+(o.priority>0?'<span class="tag green">Приоритет '+o.priority+'</span>':'')+'</div><span>'+status+'</span></div><div class="order-table">'+items+'</div>'+activate+priority+cancel+archive+'</div>';
   }).join('');
 }
