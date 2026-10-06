@@ -1007,8 +1007,12 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:close-month:' || $1))",[currentMonthStart]);
     const monthStart=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit'}).format(new Date())+'-01';
     const monthState=(await c.query('SELECT * FROM month_states WHERE period_month=$1 FOR UPDATE',[monthStart])).rows[0]||null;
-    const payrollMonth=(monthState?.brigadier_closed_at && !monthState?.reopened_at) ? new Date(Date.UTC(Number(monthStart.slice(0,4)),Number(monthStart.slice(5,7)),1)) : new Date(monthStart+'T00:00:00Z');
-    if(monthState?.finalized_at) payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
+    const payrollMonth=new Date(monthStart+'T00:00:00Z');
+    // После закрытия рабочей части месяца новые отгрузки относятся
+    // к следующему месяцу по начислению. Если месяц снова открыт —
+    // отгрузка снова относится к закрываемому месяцу.
+    if((monthState?.brigadier_closed_at && !monthState?.reopened_at) || monthState?.finalized_at)
+      payrollMonth.setUTCMonth(payrollMonth.getUTCMonth()+1);
     const payrollMonthText=payrollMonth.toISOString().slice(0,7)+'-01';
     if(orderId){
       const order=(await c.query('SELECT id,status FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
