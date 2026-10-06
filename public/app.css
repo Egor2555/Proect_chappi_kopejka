@@ -15,3 +15,13 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
 .close-month-not-ready{background:var(--red)!important;color:#fff!important;width:100%;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .ios-info-panel{background:#fff;border:1px solid #d1d1d6;border-radius:14px;padding:16px 18px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,.08);color:var(--text)}
 .ios-info-panel strong{display:block;font-size:17px;margin-bottom:6px}.ios-info-panel p{margin:6px 0;color:var(--muted);line-height:1.4}.ios-info-panel p:last-child{color:var(--text);font-weight:600}
+
+/* Chappi Edition: daily production status card */
+.daily-production-card{background:var(--card);border-radius:16px;padding:20px;margin:0 0 16px;border:2px solid transparent;box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.035)}
+.daily-production-card.ready{border-color:var(--green);background:var(--green-bg)}
+.daily-production-card.missing{border-color:var(--red);background:#fff5f4}
+.daily-production-card.day-off{border-color:#c7c7cc;background:#f7f7f8}
+.daily-production-card.in-work{border-color:var(--green);background:var(--green-bg)}
+.daily-production-card h2{margin-bottom:4px}.daily-date{margin:0 0 14px;color:var(--muted)}
+.daily-rows{display:grid;gap:0}.daily-row{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid rgba(60,60,67,.12)}.daily-row:last-child{border-bottom:0}
+.daily-empty{min-height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;color:var(--muted)}.daily-empty strong{color:var(--text);font-size:18px}.daily-workers{margin-top:14px;padding-top:12px;border-top:1px solid rgba(60,60,67,.12);color:var(--muted)}.daily-workers span{font-weight:650;color:var(--text)}
