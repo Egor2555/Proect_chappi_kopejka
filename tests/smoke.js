@@ -41,19 +41,16 @@ async function must(path, options, expected=200) {
   const day1=d1.toISOString().slice(0,10), day2=d2.toISOString().slice(0,10);
   const month=today.slice(0,7)+'-01';
 
-  // CI fixture: the application correctly evaluates brigadier history by work date.
-  // Seed the current brigadier's history for the two earlier test days without
-  // weakening production validation.
-  const brigMe=await must('/api/me',{token:brigadier});
-  const {Client}=require('pg');
-  const db=new Client({connectionString:process.env.DATABASE_URL});
-  await db.connect();
-  await db.query("INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,'brigadier',$2::date) ON CONFLICT DO NOTHING",[brigMe.user.worker_id,day1]);
-  await db.end();
-
   const worker=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker F'}},201);
   const workerS=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker S'}},201);
   const workerC=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Worker C'}},201);
+  const workerB=await must('/api/workers',{token:admin,method:'POST',body:{displayName:'CI Brigadier'}},201);
+  await must('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}});
+  const {Client}=require('pg');
+  const db=new Client({connectionString:process.env.DATABASE_URL});
+  await db.connect();
+  await db.query("INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,'brigadier',$2::date) ON CONFLICT DO NOTHING",[workerB.id,day1]);
+  await db.end();
   for (const w of [worker,workerS,workerC]) await must('/api/team-memberships',{token:admin,method:'POST',body:{workerId:w.id,teamId:team.id,validFrom:month}},201);
   await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,workerIds:[workerS.id,workerC.id]}});
   await must('/api/attendance',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,workerIds:[workerC.id]}});
