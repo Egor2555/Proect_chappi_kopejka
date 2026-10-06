@@ -45,7 +45,7 @@ function formatProductLength(p){return escapeHtml(p?.length_label||formatLength(
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+' · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
-async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='fund')return fund();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
+async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='rates')return rates();if(tab==='admin')return admin()}
 async function home(){
  const d=await api('/dashboard');
  const todayRows=d.today.map(x=>({...x,length_m:Number(x.length_m)}));
@@ -336,12 +336,6 @@ async function rates(){
  const rf=$('#rateForm');if(rf)rf.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{await api('/rates',{method:'POST',body:JSON.stringify({productId:f.get('productId'),periodMonth:f.get('periodMonth')+'-01',amountMinor:Math.round(Number(f.get('amount'))*100)})});notify('Расценка сохранена');rates()}catch(err){notify(err.message,'error')}});
  const pf=$('#productForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(pf));try{await api('/products',{method:'POST',body:JSON.stringify(d)});notify('Типоразмер добавлен');await loadBase();rates()}catch(err){notify(err.message,'error')}});
  document.querySelectorAll('.archiveProduct').forEach(b=>b.onclick=async()=>{if(!confirm('Перенести типоразмер в архив? История останется доступной.'))return;try{await api('/products/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Типоразмер архивирован');await loadBase();rates()}catch(err){notify(err.message,'error')}})
-}
-async function fund(){
- const d=await api('/fund');
- $('#fund').innerHTML='<h1>Общий фонд</h1><div class="grid"><div class="card"><h3>Текущий остаток</h3><div class="stat">'+money(d.summary.balance_minor)+'</div></div><div class="card"><h3>Поступления</h3><div class="stat">'+money(d.summary.income_minor)+'</div></div><div class="card"><h3>Расходы</h3><div class="stat">'+money(d.summary.expense_minor)+'</div></div></div><div class="card"><h2>Движения фонда</h2>'+d.entries.map(x=>'<p>'+escapeHtml(x.entry_date)+' · '+(x.entry_type==='income'?'Поступление':'Расход')+' · '+money(x.amount_minor)+' · '+escapeHtml(x.note)+'</p>').join('')+'</div>'+
- (state.user.role==='admin'?'<div class="card"><h2>Новое движение</h2><form id="fundForm"><label>Дата<input type="date" name="entryDate" required value="'+localDate()+'"></label><label>Тип<select name="entryType"><option value="income">Поступление</option><option value="expense">Расход</option></select></label><label>Сумма, грн<input name="amount" type="number" min="0" step="0.01" required></label><label>Пояснение<input name="note" required></label><button>Сохранить движение</button></form></div>':'');
- const f=$('#fundForm');if(f)f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f);try{await api('/fund',{method:'POST',body:JSON.stringify({entryDate:d.get('entryDate'),entryType:d.get('entryType'),amountMinor:Math.round(Number(d.get('amount'))*100),note:d.get('note')})});notify('Движение фонда сохранено');fund()}catch(err){notify(err.message,'error')}})
 }
 async function archive(){
  const rows=await api('/archive/months');
