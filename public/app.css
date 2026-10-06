@@ -38,8 +38,10 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
 .daily-report-section{padding:18px 0;border-top:1px solid #e5e5ea}
 .daily-report-section:first-of-type{margin-top:16px}
 .daily-report-section h3{margin:0 0 12px;font-size:18px}
-.daily-report-status-actions{display:flex;gap:8px}
-.daily-report-status-actions button{flex:1}
+.daily-report-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px}
+.daily-report-actions button{flex:0 0 auto;min-width:190px}
+.daily-dayoff{background:#d64545!important;border-color:#d64545!important;color:#fff!important}
+.daily-save{background:#3a9b68!important;border-color:#3a9b68!important;color:#fff!important}
 .daily-report-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .daily-report-section-title h3{margin:0}
 .daily-report-section-title button{min-height:42px;padding:9px 13px}
@@ -64,5 +66,7 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
   .daily-report-section-title button{width:100%}
   .daily-report-product{grid-template-columns:minmax(0,1fr) 125px}
   .daily-extra-row{grid-template-columns:minmax(0,1fr) 125px}
+  .daily-report-actions{gap:8px}
+  .daily-report-actions button{min-width:0;flex:1}
   .daily-extra-row button{grid-column:1/-1;width:100%}
 }
