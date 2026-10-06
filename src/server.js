@@ -643,6 +643,10 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       await c.query('UPDATE daily_production_reports SET updated_at=now(),created_by=$2 WHERE id=$1',[report.id,req.user.sub]);
     } else {
       report=(await c.query('INSERT INTO daily_production_reports(work_date,team_id,created_by) VALUES($1,$2,$3) RETURNING *',[workDate,team.id,req.user.sub])).rows[0];
+      // Attendance may have been entered separately before the daily report.
+      // The report carries the authoritative worker list for that day, so
+      // replace any pre-existing attendance instead of violating the unique key.
+      await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,team.id]);
     }
     for(const workerId of workerIds)
       await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,was_brigadier,created_by) VALUES($1,$2,$3,$4,$5)',[workDate,team.id,workerId,false,req.user.sub]);
