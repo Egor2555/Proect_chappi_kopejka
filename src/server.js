@@ -1304,6 +1304,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   if(req.user.role==='worker' && month!==currentMonthKyiv)
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
+  const monthState=(await pool.query('SELECT brigadier_closed_at,reopened_at FROM month_states WHERE period_month=$1',[start])).rows[0]||null;
   const r=await pool.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.length_label,COUNT(DISTINCT pe.id)::int entries,
     COALESCE(SUM(sa.quantity),0)::int quantity,
     r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
@@ -1392,6 +1393,8 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     res.json({month,items:visibleItems,total:visibleTotal,missingRates:missing,earnings:earnings.rows,
     eligibleHappyKopeckWorkers:req.user.role==='admin' ? eligibleHappyKopeckWorkers : [],
     happyKopeck:closedHappyKopeck || {residualMinor:residualMinor.toString(),winnerId:null,status:residualMinor>0n?'pending':'not_needed'},
+    brigadierClosed:!!monthState?.brigadier_closed_at && !monthState?.reopened_at,
+    reopened:!!monthState?.reopened_at,
     closed:!!closureRow});
 }));
 
