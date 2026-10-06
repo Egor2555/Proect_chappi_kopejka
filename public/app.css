@@ -70,3 +70,17 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
   .daily-report-actions button{min-width:0;flex:1}
   .daily-extra-row button{grid-column:1/-1;width:100%}
 }
+
+/* Chappi-style shipment order choice */
+.shipment-order-list{display:flex;flex-direction:column;gap:2px;margin-bottom:16px}
+.shipment-order-label{font-size:15px;font-weight:600;margin-bottom:8px;color:var(--muted)}
+.shipment-order-option{display:flex;align-items:center;gap:10px;min-height:46px;padding:5px 2px;border:0;border-bottom:1px solid #e5e5ea;background:transparent;cursor:pointer;margin:0}
+.shipment-order-option:last-child{border-bottom:0}
+.shipment-order-option input{position:absolute;opacity:0;pointer-events:none}
+.shipment-order-dot{width:20px;height:20px;flex:0 0 20px;border:2px solid #c7c7cc;border-radius:50%;background:#fff;position:relative;transition:background .15s ease,border-color .15s ease,transform .12s ease}
+.shipment-order-option input:checked + .shipment-order-dot{background:var(--blue);border-color:var(--blue)}
+.shipment-order-option input:checked + .shipment-order-dot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}
+.shipment-order-option:active .shipment-order-dot{transform:scale(.94)}
+.shipment-order-text{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:16px}
+.shipment-order-text strong{font-weight:600;white-space:nowrap}
+.shipment-order-text span{color:var(--text);overflow:hidden;text-overflow:ellipsis}
