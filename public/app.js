@@ -335,7 +335,7 @@ async function people(){
    const missing=r.missingRates||[];
    const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
    const financeVisible=state.user.role!=='worker';
-   let html='<h2>Производство за '+escapeHtml(m)+'</h2>';
+   let html='<h2>Отгружено и подлежит оплате за '+escapeHtml(m)+'</h2>';
    html+=financeVisible
      ? simpleTable(rows,[['size','Типоразмер'],['quantity','Количество'],['rate','Расценка'],['total','Стоимость']])
      : simpleTable(rows,[['size','Типоразмер'],['quantity','Количество']]);
@@ -351,8 +351,19 @@ async function people(){
      }
    }
    if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m)))).join(', ')+'</p>';
+   if(state.user.role==='admin' && !r.closed){
+     const ready=!missing.length && r.brigadierClosed && !r.reopened;
+     if(r.brigadierClosed && !r.reopened) html+='<p class="success"><strong>Бригадир закрыл месяц.</strong> Все дальнейшие действия готовы к финальному закрытию после ввода всех расценок.</p>';
+     else html+='<p class="muted">Месяц ещё не закрыт бригадиром. После его закрытия здесь появится возможность окончательно зафиксировать месяц.</p>';
+     const statusClass=ready?'close-month-ready':'close-month-not-ready';
+     html+='<button id="closeMonth" class="'+statusClass+'">Закрыть месяц</button>';
+   }
+   if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>';
    if(r.earnings&&r.earnings.length) html+='<h2>Начисления работников</h2>'+simpleTable(r.earnings.map(x=>({...x,amount:money(x.amount_minor)})),[['display_name','Работник'],['work_days','Дней'],['amount','Начислено']]);
-   if(state.user.role==='admin') { const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n; if(r.closed) html+='<p class="success"><strong>Месяц закрыт и зафиксирован.</strong>'+(r.happyKopeck?.winnerId?' '+escapeHtml(r.happyKopeck.badge||'Счастливая копейка от Чаппи 🪙🏆')+' уже разыграна и сохранена.':'')+'</p>'; else { html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>'; html+='<button id="closeMonth" '+(missing.length?'disabled':'')+'>Закрыть месяц</button>'; } }
+   if(state.user.role==='admin' && !r.closed){
+     const pending=BigInt(r.happyKopeck?.residualMinor||'0')>0n;
+     html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>';
+   }
    $('#reportResult').innerHTML=html;
    document.querySelectorAll('.saveMonthlyRate').forEach(b=>b.onclick=async()=>{
      const input=document.querySelector('.monthlyRateInput[data-product-id="'+b.dataset.productId+'"]');
@@ -362,6 +373,16 @@ async function people(){
    });
    const b=$('#closeMonth');
    if(b)b.onclick=async()=>{
+     const currentMissing=r.missingRates||[];
+     if(currentMissing.length){
+       const list=currentMissing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m)))).join('<br>');
+       $('#notice').innerHTML='<div class="ios-info-panel"><strong>Не все расценки введены</strong><p>Для закрытия месяца сначала укажите расценку для каждого типоразмера.</p><p>'+list+'</p></div>';
+       return;
+     }
+     if(!r.brigadierClosed || r.reopened){
+       $('#notice').innerHTML='<div class="ios-info-panel"><strong>Месяц ещё не готов к закрытию</strong><p>Сначала бригадир должен закрыть месяц. После этого администратор сможет окончательно зафиксировать расчёт.</p></div>';
+       return;
+     }
      if(!confirm('Закрыть месяц '+m+'? Система сначала рассчитает каждый рабочий день по введённым расценкам и разделит стоимость дня между работавшими в этот день. После закрытия месяц фиксируется.'))return;
      try{await api('/reports/close-month',{method:'POST',body:JSON.stringify({month:m})});notify('Месяц закрыт. Начисления работников зафиксированы.','success');await load()}catch(e){notify(e.message,'error')}
    };
