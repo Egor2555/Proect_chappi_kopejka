@@ -376,42 +376,63 @@ async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
- const orderOptions=state.orders.map(o=>'<label class="shipment-order-option"><input type="radio" name="orderId" value="'+o.id+'"><span class="shipment-order-dot"></span><span class="shipment-order-text"><strong>'+escapeHtml(o.order_number)+'</strong><span>'+escapeHtml(o.title)+'</span></span></label>').join('');
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity)).join(', ')+'</p>').join('');
- $('#shipments').innerHTML='<h1>Отправки</h1>'+(canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div class="shipment-order-list"><div class="shipment-order-label">Заказ</div>'+orderOptions+'</div><div id="shipmentItems"><p class="muted">Выберите заказ для отправки.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+'<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+'<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
+ const orderOptions=state.orders.filter(o=>['active','queued'].includes(o.status)).map(o=>'<label class="shipment-order-option"><input type="checkbox" name="shipmentOrderId" value="'+o.id+'"><span class="shipment-order-dot"></span><span class="shipment-order-text"><strong>'+escapeHtml(o.order_number)+'</strong><span>'+escapeHtml(o.title)+'</span></span></label>').join('');
+ const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>((i.order_number?escapeHtml(i.order_number)+' · ':'')+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity+(i.order_number?'':' · со склада')).join(', ')+'</p>').join('');
+ $('#shipments').innerHTML='<h1>Отправки</h1>'+(canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div class="shipment-order-list"><div class="shipment-order-label">Заказы</div>'+orderOptions+'</div><div id="shipmentItems"><p class="muted">Выберите заказ для отправки.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+'<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+'<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
  if(f){
    const box=$('#shipmentItems');
-   const orderSelect=()=>f.querySelector('input[name="orderId"]:checked');
+   const selectedOrderIds=()=>[...f.querySelectorAll('input[name="shipmentOrderId"]:checked')].map(x=>x.value);
    const loadOptions=async()=>{
      const opts=await api('/shipment-options');
      box.replaceChildren();
-     const selectedOrder=orderSelect();
-     const orderId=selectedOrder?.value||'';
-     const source=orderId?(opts.orderItems||[]):(opts.stockItems||[]);
-     const merged=new Map();
-     for(const x of source){
-       const key=String(x.productId);
-       const prev=merged.get(key);
-       if(prev) prev.available+=Number(x.available)||0;
-       else merged.set(key,{...x,available:Number(x.available)||0});
+     const ids=selectedOrderIds();
+     if(!ids.length){box.innerHTML='<p class="muted">Выберите заказ для отправки.</p>';return}
+     const selected=new Set(ids);
+     const orderItems=(opts.orderItems||[]).filter(x=>selected.has(String(x.order_id))&&Number(x.available)>0);
+     const stockItems=(opts.stockItems||[]).filter(x=>Number(x.available)>0);
+     if(!orderItems.length && !stockItems.length){box.innerHTML='<p class="empty">Для выбранных заказов доступной продукции нет.</p>';return}
+     const byOrder=new Map();
+     for(const x of orderItems){if(!byOrder.has(x.order_id))byOrder.set(x.order_id,[]);byOrder.get(x.order_id).push(x)}
+     for(const orderId of ids){
+       const order=state.orders.find(o=>String(o.id)===String(orderId));
+       const items=byOrder.get(orderId)||[];
+       if(!items.length)continue;
+       const section=document.createElement('div');section.className='shipment-source-section';
+       section.innerHTML='<h3>Заказ '+escapeHtml(order?.order_number||'')+(order?.title?' · '+escapeHtml(order.title):'')+'</h3>';
+       for(const x of items){
+         const row=document.createElement('div');row.className='row shipmentItem';row.dataset.orderId=x.order_id;
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+x.available+'" value="'+x.available+'" required></label><small>Доступно: '+x.available+' шт.</small>';
+         section.append(row);
+       }
+       box.append(section);
      }
-     const items=[...merged.values()].filter(x=>x.available>0);
-     if(!items.length){box.innerHTML='<p class="empty">Для выбранного режима доступной продукции нет.</p>';return}
-     for(const x of items){
-       const row=document.createElement('div');row.className='row shipmentItem';
-       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="1" max="'+x.available+'" value="'+x.available+'" required></label><small>Доступно: '+x.available+' шт.</small>';
-       row.dataset.available=x.available;box.append(row);
+     const warehouse=document.createElement('div');warehouse.className='shipment-source-section shipment-warehouse-section';
+     warehouse.innerHTML='<h3>Дополнительно со склада</h3><p class="muted">Эти столбы не относятся к выбранным заказам. Укажите количество только тех позиций, которые клиент забирает дополнительно.</p>';
+     for(const x of stockItems){
+       const row=document.createElement('div');row.className='row shipmentItem shipmentWarehouseItem';row.dataset.orderId='';
+       row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
+       warehouse.append(row);
      }
+     if(stockItems.length)box.append(warehouse);
    };
-   f.querySelectorAll('input[name="orderId"]').forEach(r=>r.addEventListener('change',()=>loadOptions().catch(e=>notify(e.message,'error'))));
+   f.querySelectorAll('input[name="shipmentOrderId"]').forEach(r=>r.addEventListener('change',()=>loadOptions().catch(e=>notify(e.message,'error'))));
    await loadOptions();
    const st=await api('/month/state?month='+localDate().slice(0,7));
    $('#reopenMonthBtn').hidden=!st.brigadierClosed||st.finalized;
    $('#closeMonthBtn').hidden=st.brigadierClosed||st.finalized;
    $('#closeMonthBtn').onclick=async()=>{if(!confirm('Закрыть текущий месяц? Новые отправки будут относиться к следующему месяцу.'))return;try{await api('/month/close',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Месяц закрыт для текущих отправок','success');await shipments()}catch(e){notify(e.message,'error')}};
    $('#reopenMonthBtn').onclick=async()=>{try{await api('/month/reopen',{method:'POST',body:JSON.stringify({month:localDate().slice(0,7)})});notify('Текущий месяц продолжен','success');await shipments()}catch(e){notify(e.message,'error')}};
-   f.addEventListener('submit',async e=>{e.preventDefault();const d=new FormData(f);const items=[...box.querySelectorAll('.shipmentItem')].map(row=>({productId:row.querySelector('[name=productId]').value,quantity:Number(row.querySelector('[name=quantity]').value)})).filter(x=>x.quantity>0);if(!items.length){notify('Нет доступной продукции','error');return}try{await api('/shipments',{method:'POST',body:JSON.stringify({orderId:d.get('orderId')||null,items})});notify('Отправка записана','success');await shipments()}catch(err){notify(err.message,'error')}});
+   f.addEventListener('submit',async e=>{
+     e.preventDefault();
+     const items=[...box.querySelectorAll('.shipmentItem')].map(row=>({orderId:row.dataset.orderId||null,productId:row.querySelector('[name=productId]').value,quantity:Number(row.querySelector('[name=quantity]').value)})).filter(x=>x.quantity>0);
+     if(!selectedOrderIds().length){notify('Выберите хотя бы один заказ','error');return}
+     if(!items.length){notify('Нет продукции для отправки','error');return}
+     try{
+       await api('/shipments',{method:'POST',body:JSON.stringify({orderIds:selectedOrderIds(),items})});
+       notify('Отправка записана','success');await shipments();
+     }catch(err){notify(err.message,'error')}
+   });
  }
 }
 async function people(){
