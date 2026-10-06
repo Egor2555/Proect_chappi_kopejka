@@ -575,7 +575,7 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       const oldEntries=(await c.query('SELECT * FROM production_entries WHERE daily_report_id=$1 AND voided_at IS NULL FOR UPDATE',[report.id])).rows;
       for(const oldEntry of oldEntries){
         const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id])).rows.map(x=>x.order_id).filter(Boolean);
-        const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[oldEntry.id])).rows;
+        const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1 ORDER BY created_at DESC,id DESC',[oldEntry.id])).rows;
         for(const movement of movements){
           const reverse=-Number(movement.quantity_delta);
           await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
@@ -586,9 +586,14 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
         for(const orderId of affectedOrders){
           const missing=(await c.query(`SELECT COUNT(*)::int n FROM order_items i WHERE i.order_id=$1 AND i.required_qty >
             COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
-          if(Number(missing)>0) await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
+          if(Number(missing)>0) await c.query("UPDATE orders SET status='queued',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
         }
         await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1',[oldEntry.id,'Редактирование дневного отчёта бригадиром']);
+      }
+      const activeNow=(await c.query("SELECT 1 FROM orders WHERE status='active' LIMIT 1")).rowCount>0;
+      if(!activeNow){
+        await c.query("UPDATE orders SET status='active' WHERE id=(SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC,id ASC LIMIT 1)");
+      }
       }
       await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,team.id]);
       await c.query('UPDATE daily_production_reports SET updated_at=now(),created_by=$2 WHERE id=$1',[report.id,req.user.sub]);
