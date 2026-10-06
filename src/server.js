@@ -1238,7 +1238,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
-        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id AND w.is_brigadier=false
         JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
         JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type IN ('production_in','surplus_transfer')
         JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
@@ -1287,9 +1287,10 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const missing=produced.filter(x=>x.rate_minor===null).map(x=>(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+x.length_m+' м');
     if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
-      array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name) ORDER BY w.display_name) workers
+      array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',w.is_brigadier) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE EXISTS (
+      WHERE w.is_brigadier=false
+        AND EXISTS (
         SELECT 1
         FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
@@ -1321,7 +1322,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
         date:String(day.work_date),
         teamId:day.team_id,
         totalMinor:day.total_minor,
-        workerIds:a.workers.map(person=>person.workerId)
+        workerIds:a.workers.filter(person=>!person.isBrigadier).map(person=>person.workerId)
       };
     });
     const calculation=calculateMonthlyWorkerEarnings(calculationDays);
