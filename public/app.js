@@ -228,10 +228,6 @@ async function production(target='#production'){
  }).join('');
  targetEl().innerHTML='<div class="card daily-report-window">'+
    '<div class="daily-report-head"><div><h2>Ежедневный отчёт</h2><p class="daily-report-date">'+escapeHtml(formatDateDMY(date))+'</p></div></div>'+
-   '<div class="daily-report-section daily-report-status">'+
-     '<h3>Статус дня</h3>'+
-     '<div class="daily-report-status-actions"><button type="button" id="dailyWorkDay" class="secondary">Рабочий день</button><button type="button" id="dailyDayOff" class="secondary">Выходной</button></div>'+
-   '</div>'+
    '<div id="dailyReportWorkContent">'+
      '<div class="daily-report-section"><h3>Кто работал</h3><div class="daily-report-workers">'+(workerRows||'<div class="empty">Работники не добавлены.</div>')+'</div></div>'+
      '<div class="daily-report-section"><div class="daily-report-section-title"><h3>Произведено</h3><button type="button" id="addDailySize" class="secondary">+ Добавить типоразмер</button></div>'+
@@ -240,12 +236,14 @@ async function production(target='#production'){
      '</div>'+
    '</div>'+
    '<div id="dailyReportSummary" class="daily-report-summary"></div>'+
-   '<button type="button" id="saveDailyReport">Сохранить отчёт</button>'+
+   '<div class="daily-report-actions">'+
+     '<button type="button" id="dailyDayOff" class="daily-dayoff">Выходной</button>'+
+     '<button type="button" id="saveDailyReport" class="daily-save">Сохранить отчёт</button>'+
+   '</div>'+
  '</div>';
  const workContent=$('#dailyReportWorkContent');
  const summary=$('#dailyReportSummary');
  const save=$('#saveDailyReport');
- const workBtn=$('#dailyWorkDay');
  const offBtn=$('#dailyDayOff');
  const extra=$('#dailyExtraRows');
  const addExtraRow=(selectedProductId='',quantity='')=>{
@@ -270,9 +268,9 @@ async function production(target='#production'){
    const items=report.items||[];
    const names=(report.workerIds||[]).map(id=>workers.find(w=>String(w.id)===String(id))?.display_name).filter(Boolean);
    workContent.hidden=dayOff;
-   workBtn.hidden=false;offBtn.hidden=false;
+   offBtn.hidden=false;
    save.hidden=true;
-   workBtn.disabled=true;offBtn.disabled=true;
+   offBtn.disabled=true;
    summary.innerHTML=dayOff
      ? '<div><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div>'
      : '<div><strong>Отчёт за день внесён</strong><span>'+(items.length?items.map(x=>escapeHtml(formatProduct(x))+' — '+Number(x.quantity||0)+' шт.').join('<br>'):'В РАБОТЕ — производства не было')+'</span>'+(names.length?'<span>Работали: '+names.map(escapeHtml).join(', ')+'</span>':'')+'</div>';
@@ -281,8 +279,8 @@ async function production(target='#production'){
    edit.onclick=()=>{
      report.exists=false;
      workContent.hidden=false;
-     workBtn.hidden=false;offBtn.hidden=false;
-     workBtn.disabled=false;offBtn.disabled=false;
+     offBtn.hidden=false;
+     offBtn.disabled=false;
      save.hidden=false;
      summary.replaceChildren();
      document.querySelectorAll('#dailyDefaultRows input,#dailyExtraRows input,#dailyExtraRows select,.daily-report-workers input').forEach(x=>x.disabled=false);
@@ -300,7 +298,6 @@ async function production(target='#production'){
    save.hidden=false;
  }
  $('#addDailySize').onclick=()=>addExtraRow();
- workBtn.onclick=()=>{workContent.hidden=false;save.hidden=false;summary.replaceChildren();};
  offBtn.onclick=setDayOff;
  save.onclick=async()=>{
    const items=[];
