@@ -1187,7 +1187,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
     GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
-  const missing=produced.filter(x=>x.rate_minor===null).map(x=>({section_width_mm:x.section_width_mm,section_height_mm:x.section_height_mm,length_m:x.length_m}));
+  const missing=produced.filter(x=>x.rate_minor===null).map(x=>({section_width_mm:x.section_width_mm,section_height_mm:x.section_height_mm,length_m:x.length_m,length_label:x.length_label}));
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
   let earnings=await pool.query(`SELECT e.worker_id,w.display_name,e.amount_minor,e.work_days,e.daily_details
     FROM monthly_worker_earnings e JOIN workers w ON w.id=e.worker_id
@@ -1275,7 +1275,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     if(!monthState?.brigadier_closed_at || monthState.reopened_at) throw new Error('Сначала бригадир должен закрыть месяц');
     if((await c.query('SELECT 1 FROM monthly_closures WHERE period_month=$1',[start])).rowCount)
       throw new Error('Этот месяц уже окончательно закрыт');
-    const items=(await c.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,COUNT(DISTINCT pe.id)::int entries,
+    const items=(await c.query(`SELECT p.id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.length_label,COUNT(DISTINCT pe.id)::int entries,
       COALESCE(SUM(sa.quantity),0)::int quantity,
       r.amount_minor::text rate_minor,
       CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
