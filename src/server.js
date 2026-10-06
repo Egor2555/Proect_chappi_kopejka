@@ -913,7 +913,7 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
     if(shippedFromEntry>0)
       throw new Error('Нельзя отменить производство: часть этой производственной партии уже вошла в отгрузку');
     const affectedOrders=(await c.query('SELECT DISTINCT order_id FROM production_allocations WHERE production_entry_id=$1 AND voided_at IS NULL',[entry.id])).rows.map(x=>x.order_id);
-    const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1',[entry.id])).rows;
+    const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1 ORDER BY created_at DESC, id DESC',[entry.id])).rows;
     // Serialize production reversal against concurrent shipments/other stock changes.
     const movementProductIds=[...new Set(movements.map(m=>String(m.product_id)))];
     if(movementProductIds.length)
@@ -932,9 +932,18 @@ app.post('/api/production/:id/void', auth, roles('admin'), asyncRoute(async (req
         COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL),0)`,[orderId])).rows[0].n;
       if(missing>0) {
         await c.query("UPDATE orders SET status='queued',completed_at=NULL WHERE id=$1 AND status='completed'",[orderId]);
-        await c.query("UPDATE orders SET status='active',completed_at=NULL WHERE id=$1 AND status='queued' AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')",[orderId]);
       }
     }
+    // If the void leaves no active order, choose the next one deterministically:
+    // higher priority first, then older creation date.
+    await c.query(`UPDATE orders SET status='active',completed_at=NULL
+      WHERE id = (
+        SELECT id FROM orders
+        WHERE status='queued'
+        ORDER BY priority DESC, created_at ASC, id ASC
+        LIMIT 1
+      )
+      AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
     const updated=(await c.query('UPDATE production_entries SET voided_at=now(),void_reason=$2,updated_at=now() WHERE id=$1 RETURNING *',[entry.id,reason])).rows[0];
     await audit(c,req.user.sub,'void','production_entry',entry.id,entry,updated,reason);
     return updated;
