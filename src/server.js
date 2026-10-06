@@ -1034,6 +1034,9 @@ app.patch('/api/orders/:id/priority', auth, roles('admin'), asyncRoute(async (re
 app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) => {
   const {shipmentNumber,orderId=null,recipient='',note='',items=[]}=req.body;
   if(!shipmentNumber||!Array.isArray(items)||!items.length) return res.status(400).json({error:'Укажите номер отгрузки и позиции'});
+  const shipmentProductIds=items.map(item=>String(item?.productId||''));
+  if(shipmentProductIds.some(id=>!id) || new Set(shipmentProductIds).size!==shipmentProductIds.length)
+    return res.status(400).json({error:'В одной отгрузке один типоразмер можно указать только один раз'});
   const shipment=await tx(async c=>{
     // Serialize shipments with month closure. Without the shared lock, a shipment
     // could pass the "open month" check while close-month freezes its snapshot.
