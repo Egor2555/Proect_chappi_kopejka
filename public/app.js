@@ -155,11 +155,11 @@ function orderCards(rows,editable=false){
     }).join('');
     const activate=state.user.role==='admin'&&editable&&o.status==='queued'
       ? '<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>' : '';
-    const priority=state.user.role==='admin'&&editable
+    const priority=state.user.role==='admin'&&editable&&!['closed','archived'].includes(o.status)
       ? '<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button type="submit">Сохранить приоритет</button></form>' : '';
     const cancel=state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)
       ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>' : '';
-    const archive=state.user.role==='admin'&&editable&&['completed','cancelled'].includes(o.status)
+    const archive=state.user.role==='admin'&&editable&&['completed','cancelled','closed'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
     const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':'⚪ В ОЧЕРЕДИ'):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='closed'?'🔒 ЗАКРЫТ':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
     return '<div class="card '+orderHighlight+'"><div class="row"><div><strong>ЗАКАЗ: '+escapeHtml(o.title)+'</strong><br>(o.priority>0?'<span class="tag green">Приоритет '+o.priority+'</span>':'')</div><span>'+status+'</span></div><div class="order-table"><div class="order-table-head"><span>Типоразмер</span><span>Нужно</span><span>Сделано</span><span>Осталось</span></div>'+items+'</div>'+activate+priority+cancel+archive+'</div>';
