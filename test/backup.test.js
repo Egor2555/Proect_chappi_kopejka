@@ -14,7 +14,7 @@ function emptyBackup() {
     'monthly_worker_earnings','production_entries','production_allocations',
     'attendance_entries','inventory_movements','shipments','shipment_items',
     'shipment_allocations','payment_entries','monthly_closures','penny_events',
-    'fund_entries','audit_log','login_log','users'
+    'fund_entries','audit_log','login_log','users','worker_role_history','month_states'
   ];
   for (const table of required) tables[table] = [];
   return { format: 'chappi-backup-v1', tables };
