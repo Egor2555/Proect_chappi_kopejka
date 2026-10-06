@@ -46,21 +46,27 @@ function productOptions(){return state.products.filter(p=>p.active).map(p=>'<opt
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
 async function renderTab(tab){if(tab==='home')return home();if(tab==='production')return production();if(tab==='orders')return orders();if(tab==='stock')return stock();if(tab==='shipments')return shipments();if(tab==='people')return people();if(tab==='reports')return reports();if(tab==='archive')return archive();if(tab==='profile')return profile();if(tab==='products')return products();if(tab==='admin')return admin()}
+function dailyProductionCard(report){
+ const status=!report.exists?'missing':(report.dayOff?'day-off':(report.items?.length?'ready':'in-work'));
+ const cls='daily-production-card '+status;
+ if(status==='missing') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p><div class="daily-empty">⚠️<strong>Информации за текущий день ещё нет.</strong><span>Бригадир ещё не внёс данные.</span></div></div>';
+ if(status==='day-off') return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p><div class="daily-empty"><strong>ВЫХОДНОЙ ДЕНЬ</strong><span>Бригадир отметил выходной.</span></div></div>';
+ const rows=(report.items||[]).map(x=>'<div class="daily-row"><span>'+formatProduct(x)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('');
+ const names=(report.workerIds||[]).map(id=>state.workers.find(w=>String(w.id)===String(id))?.display_name).filter(Boolean);
+ return '<div class="'+cls+'"><h2>Произведено сегодня</h2><p class="daily-date">'+escapeHtml(report.workDate)+'</p>'+((report.items||[]).length?'<div class="daily-rows">'+rows+'</div>':'<div class="daily-empty"><strong>В РАБОТЕ</strong><span>Производства пока не было.</span></div>')+(names.length?'<div class="daily-workers"><span>Работали:</span> '+names.map(escapeHtml).join(', ')+'</div>':'')+'</div>';
+}
 async function home(){
  const d=await api('/dashboard');
- const todayRows=d.today.map(x=>({...x,length_m:Number(x.length_m)}));
  const isWorker=state.user.role==='worker';
+ let report=null;
+ try{report=await api('/daily-reports?date='+localDate())}catch(e){report={exists:false,workDate:localDate()};}
+ const daily=dailyProductionCard(report);
  if(isWorker){
-   $('#home').innerHTML='<h1>Сегодня</h1>'+
-     '<div class="card"><h2>Производство сегодня</h2>'+
-     simpleTable(todayRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']])+
-     '</div>'+
-     '<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>'+
-     '<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+   $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
  const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);
- $('#home').innerHTML='<h1>Сегодня</h1><div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+ $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
 }
 async function orders(){
   state.orders=await api('/orders');
