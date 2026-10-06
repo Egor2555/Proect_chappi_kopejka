@@ -616,11 +616,11 @@ app.get('/api/daily-reports', auth, roles('brigadier','admin','worker'), asyncRo
     FROM production_entries pe JOIN products p ON p.id=pe.product_id
     WHERE pe.daily_report_id=$1 AND pe.voided_at IS NULL ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm`,[report.id])).rows;
   const workers=(await pool.query('SELECT worker_id FROM attendance_entries WHERE work_date=$1 AND team_id=$2 ORDER BY worker_id',[date,team.id])).rows.map(x=>x.worker_id);
-  res.json({exists:true,id:report.id,workDate:date,items,workerIds:workers});
+  res.json({exists:true,id:report.id,workDate:date,items,workerIds:workers,dayOff:items.length===0&&workers.length===0});
 }));
 
 app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,res) => {
-  const {workDate,items=[],workerIds=[]}=req.body;
+  const {workDate,items=[],workerIds=[],dayOff=false}=req.body;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate||''))||!Array.isArray(items)||!Array.isArray(workerIds))
     return res.status(400).json({error:'Укажите дату и работавших людей'});
   const result=await tx(async c=>{
@@ -638,7 +638,8 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       const ok=(await c.query(`SELECT 1 FROM team_memberships m WHERE m.worker_id=$1 AND m.team_id=$2 AND m.valid_from<=$3 AND (m.valid_to IS NULL OR m.valid_to>=$3) AND EXISTS (SELECT 1 FROM workers w WHERE w.id=$1 AND w.active=true) AND NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=$1 AND h.role='brigadier' AND h.valid_from<=$3 AND (h.valid_to IS NULL OR h.valid_to>=$3))`,[workerId,team.id,workDate])).rowCount;
       if(!ok) throw new Error('В списке есть работник, который не состоит в коллективе на эту дату');
     }
-    if(!workerIds.length) throw new Error('Отметьте хотя бы одного работника');
+    if(dayOff && (items.length || workerIds.length)) throw new Error('Для выходного дня не должно быть производства и работников');
+    if(!dayOff && !workerIds.length) throw new Error('Отметьте хотя бы одного работника');
     const products=(await c.query('SELECT id FROM products WHERE active=true')).rows.map(x=>String(x.id));
     for(const item of items){
       const pid=String(item.productId||''), qty=Number(item.quantity);
@@ -690,8 +691,8 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       const distribution=await autoAllocateProductionToOrders(c,pe,req.user.sub);
       created.push({...pe,product:p,distribution});
     }
-    await audit(c,req.user.sub,'save_daily_report','daily_production_report',report.id,null,{workDate,items,workerIds});
-    return {id:report.id,workDate,items:created,workerIds};
+    await audit(c,req.user.sub,'save_daily_report','daily_production_report',report.id,null,{workDate,items,workerIds,dayOff});
+    return {id:report.id,workDate,items:created,workerIds,dayOff};
   });
   res.status(201).json(result);
 }));
