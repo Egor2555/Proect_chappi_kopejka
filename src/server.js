@@ -45,6 +45,7 @@ async function ensureAccessProfiles() {
   await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS length_label TEXT');
   await pool.query("UPDATE products SET length_label=COALESCE(NULLIF(length_label,''),(length_mm/1000.0)::text || 'метра') WHERE length_label IS NULL OR length_label=''");
   await pool.query('ALTER TABLE workers ADD COLUMN IF NOT EXISTS is_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
+  await pool.query('ALTER TABLE attendance_entries ADD COLUMN IF NOT EXISTS was_brigadier BOOLEAN NOT NULL DEFAULT FALSE');
   await pool.query('ALTER TABLE orders ALTER COLUMN order_number DROP NOT NULL');
   // Migrate existing Railway DB constraint so fully shipped orders can use permanent `closed` status.
   await pool.query('ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check');
@@ -602,7 +603,7 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
       report=(await c.query('INSERT INTO daily_production_reports(work_date,team_id,created_by) VALUES($1,$2,$3) RETURNING *',[workDate,team.id,req.user.sub])).rows[0];
     }
     for(const workerId of workerIds)
-      await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4)',[workDate,team.id,workerId,req.user.sub]);
+      await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,was_brigadier,created_by) VALUES($1,$2,$3,$4,$5)',[workDate,team.id,workerId,false,req.user.sub]);
     const created=[];
     for(const item of items){
       const p=(await c.query('SELECT * FROM products WHERE id=$1',[item.productId])).rows[0];
@@ -644,7 +645,7 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
     const rows=[];
     for(const workerId of workerIds){
-      const r=await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4) RETURNING *',[workDate,teamId,workerId,req.user.sub]);
+      const r=await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4) RETURNING *',[workDate,teamId,workerId,false,req.user.sub]);
       rows.push(r.rows[0]);
     }
     await audit(c,req.user.sub,'replace_daily_attendance','attendance',teamId,{workDate,workers:before},{workDate,workerIds});
@@ -1279,7 +1280,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       GROUP BY pe.work_date,pe.team_id`,[start]);
     const dayAttendance=await pool.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE w.is_brigadier=false
+      WHERE a.was_brigadier=false
         AND EXISTS (
         SELECT 1 FROM shipment_items si
         JOIN shipments s ON s.id=si.shipment_id
@@ -1298,7 +1299,8 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
   }
   const eligibleHappyKopeckWorkers=req.user.role==='admin'
     ? (await pool.query(`SELECT DISTINCT w.id worker_id,w.display_name
-        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id AND w.is_brigadier=false
+        FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
+        WHERE a.was_brigadier=false
         JOIN production_entries pe ON pe.work_date=a.work_date AND pe.team_id=a.team_id
         JOIN inventory_movements im ON im.production_entry_id=pe.id AND im.movement_type IN ('production_in','surplus_transfer')
         JOIN shipment_allocations sa ON sa.inventory_movement_id=im.id
@@ -1349,7 +1351,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',w.is_brigadier) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE w.is_brigadier=false
+      WHERE a.was_brigadier=false
         AND EXISTS (
         SELECT 1
         FROM shipment_items si
