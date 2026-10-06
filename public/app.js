@@ -376,17 +376,18 @@ async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
- const orderOptions=state.orders.map(o=>'<option value="'+o.id+'">'+escapeHtml(o.order_number)+' — '+escapeHtml(o.title)+'</option>').join('');
+ const orderOptions=state.orders.map(o=>'<label class="shipment-order-option"><input type="radio" name="orderId" value="'+o.id+'"><span class="shipment-order-dot"></span><span class="shipment-order-text"><strong>'+escapeHtml(o.order_number)+'</strong><span>'+escapeHtml(o.title)+'</span></span></label>').join('');
  const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity)).join(', ')+'</p>').join('');
- $('#shipments').innerHTML='<h1>Отправки</h1>'+(canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><label>Заказ<select name="orderId">'+orderOptions+'</select></label><div id="shipmentItems"><p class="muted">Выберите заказ для отправки.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+'<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+'<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
+ $('#shipments').innerHTML='<h1>Отправки</h1>'+(canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div class="shipment-order-list"><div class="shipment-order-label">Заказ</div>'+orderOptions+'</div><div id="shipmentItems"><p class="muted">Выберите заказ для отправки.</p></div><button type="submit">Зафиксировать отправку</button></form><div class="card"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div></div>':'')+'<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+'<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
  if(f){
    const box=$('#shipmentItems');
-   const orderSelect=f.elements.orderId;
+   const orderSelect=()=>f.querySelector('input[name="orderId"]:checked');
    const loadOptions=async()=>{
      const opts=await api('/shipment-options');
      box.replaceChildren();
-     const orderId=orderSelect.value;
+     const selectedOrder=orderSelect();
+     const orderId=selectedOrder?.value||'';
      const source=orderId?(opts.orderItems||[]):(opts.stockItems||[]);
      const merged=new Map();
      for(const x of source){
@@ -403,7 +404,7 @@ async function shipments(){
        row.dataset.available=x.available;box.append(row);
      }
    };
-   orderSelect.addEventListener('change',()=>loadOptions().catch(e=>notify(e.message,'error')));
+   f.querySelectorAll('input[name="orderId"]').forEach(r=>r.addEventListener('change',()=>loadOptions().catch(e=>notify(e.message,'error'))));
    await loadOptions();
    const st=await api('/month/state?month='+localDate().slice(0,7));
    $('#reopenMonthBtn').hidden=!st.brigadierClosed||st.finalized;
