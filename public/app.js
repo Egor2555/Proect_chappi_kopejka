@@ -21,20 +21,19 @@ async function updateLoginProfile(profile){
       pinLabel.hidden=!enabled;
       pinInput.required=enabled;
       pinInput.value='';
-      if(enabled){submit.textContent='Войти';}
-      else {submit.textContent='Открытый доступ';}
-    }catch(err){pinLabel.hidden=false;pinInput.required=true;submit.textContent='Войти';}
+      if(enabled){submit.textContent='Войти';submit.classList.remove('open-access');}
+      else {submit.textContent='Войти';submit.classList.add('open-access');}
+    }catch(err){pinLabel.hidden=false;pinInput.required=true;submit.textContent='Войти';submit.classList.remove('open-access');}
   }else{
     pinLabel.hidden=false;
     pinInput.required=true;
     pinInput.value='';
     submit.textContent='Войти';
+    submit.classList.remove('open-access');
   }
 }
 document.querySelectorAll('[data-login-profile]').forEach(b=>b.addEventListener('click',()=>updateLoginProfile(b.dataset.loginProfile)));
-document.querySelector('[data-login-profile="brigadier"]').classList.add('active');
-updateLoginProfile('brigadier');
-document.querySelector('[data-login-profile="brigadier"]').classList.add('active');
+updateLoginProfile('worker');
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({profile:f.get('profile'),pin:f.get('pin')})});state.token=d.token;localStorage.setItem('chappiToken',d.token);await boot()}catch(err){$('#loginError').textContent=err.message;$('#adminRecoveryStart').hidden=!(f.get('profile')==='brigadier'&&err.adminRecoveryAvailable===true)}});
 $('#adminRecoveryStart').addEventListener('click',async()=>{const b=$('#adminRecoveryStart');b.disabled=true;try{const d=await api('/auth/recovery/request',{method:'POST',body:'{}'});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').hidden=false;}catch(err){$('#recoveryError').textContent=err.message;$('#adminRecoveryForm').hidden=false;}finally{b.disabled=false}});
 $('#adminRecoveryForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await api('/auth/recovery/complete',{method:'POST',body:JSON.stringify({code:f.get('code'),newPin:f.get('newPin')})});$('#recoveryError').textContent=d.message;$('#adminRecoveryForm').reset();$('#adminRecoveryForm').hidden=true;$('#adminRecoveryStart').hidden=true;$('#loginError').textContent='';$('#loginForm [name=pin]').value='';}catch(err){$('#recoveryError').textContent=err.message}});
