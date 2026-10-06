@@ -820,7 +820,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
 
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
     await c.query(`UPDATE orders SET status='active' WHERE id=(
-      SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC LIMIT 1
+      SELECT id FROM orders WHERE status='queued' ORDER BY priority DESC,created_at ASC,id ASC LIMIT 1
     ) AND NOT EXISTS (SELECT 1 FROM orders WHERE status='active')`);
     await audit(c,req.user.sub,'cancel','order',orderId,before,{...after,shipmentCount},reason);
     return after;
@@ -882,7 +882,7 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
         WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done
     FROM orders o JOIN order_items i ON i.order_id=o.id
     WHERE o.status IN ('active','queued') AND i.product_id=$1
-    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END, o.priority DESC, o.created_at ASC
+    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END, o.priority DESC, o.created_at ASC, o.id ASC
     FOR UPDATE OF o`,[productionEntry.product_id])).rows;
   for(const candidate of candidates){
     if(remaining<=0) break;
