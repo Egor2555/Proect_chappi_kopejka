@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS orders (
   title TEXT NOT NULL,
   priority INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('queued','active','completed','archived','cancelled')),
+    CHECK (status IN ('queued','active','completed','closed','archived','cancelled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,
   cancelled_at TIMESTAMPTZ,
