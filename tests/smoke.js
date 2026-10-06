@@ -54,7 +54,11 @@ async function must(path, options, expected=200) {
   const orderA=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-A',title:'CI direct order',priority:1,items:[{productId:product.id,requiredQty:2}]}},201);
   const orderB=await must('/api/orders',{token:admin,method:'POST',body:{orderNumber:'CI-B',title:'CI surplus order',priority:2,items:[{productId:product.id,requiredQty:1}]}},201);
 
-  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product.id,orderId:orderA.id,quantity:3,note:'CI end-to-end'}},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day1,items:[
+    {productId:product.id,quantity:3},
+    {productId:product2.id,quantity:150},
+    {productId:product25.id,quantity:100}
+  ],workerIds:[workerS.id,workerC.id]}},201);
   const orders=await must('/api/orders',{token:admin});
   assert.equal(orders.find(o=>o.id===orderA.id).status,'completed');
   assert.equal(orders.find(o=>o.id===orderB.id).status,'completed');
@@ -73,12 +77,12 @@ async function must(path, options, expected=200) {
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
-  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day1,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:day2,teamId:team.id,productId:product25.id,quantity:100}},201);
-  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product2.id,quantity:150}},201);
-  await must('/api/production',{token:brigadier,method:'POST',body:{workDate:today,teamId:team.id,productId:product25.id,quantity:50}},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[
+    {productId:product2.id,quantity:150},
+    {productId:product25.id,quantity:50}
+  ],workerIds:[worker.id,workerS.id,workerC.id]}},201);
   const productionHistory=await must('/api/production?date='+day1,{token:admin});
-  assert.equal(productionHistory.length,2);
+  assert.equal(productionHistory.length,3);
   await must('/api/month/close',{token:brigadier,method:'POST',body:{month:today.slice(0,7)}},201);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.deepEqual(beforeRates.missingRates.map(x=>({length_m:String(x.length_m),section_width_mm:Number(x.section_width_mm),section_height_mm:Number(x.section_height_mm)})),[{length_m:'1.5000000000000000',section_width_mm:60,section_height_mm:40}]);
@@ -106,7 +110,7 @@ async function must(path, options, expected=200) {
   assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[125,125]);
   assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
   assert.equal(closedReport.total.totalMinor,'250');
-  const closedProduction=await request('/api/production',{token:admin,method:'POST',body:{workDate:today,teamId:team.id,productId:product.id,quantity:1}});
+  const closedProduction=await request('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[{productId:product.id,quantity:1}],workerIds:[worker.id,workerS.id,workerC.id]}});
   assert.equal(closedProduction.status,403);
 
   await must('/api/fund',{token:brigadierLogin.token});
