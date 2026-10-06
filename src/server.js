@@ -862,6 +862,7 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
 }
 
 app.post('/api/production', auth, roles('brigadier'), asyncRoute(async (req,res) => {
+  return res.status(409).json({error:'Производство теперь вводится только через дневной отчёт бригадира.'});
   const {workDate,productId,quantity,note=''}=req.body;
   if(!workDate||!productId||!Number.isInteger(Number(quantity))||Number(quantity)<=0)
     return res.status(400).json({error:'Проверьте дату, изделие и количество'});
