@@ -422,13 +422,19 @@ app.get('/api/products', auth, asyncRoute(async (_req,res) => {
   res.json(r.rows);
 }));
 app.post('/api/products', auth, roles('admin'), asyncRoute(async (req,res) => {
-  const {code,lengthM,lengthLabel,sectionWidthMm=60,sectionHeightMm=40}=req.body;
+  const {lengthM,lengthLabel,sectionWidthMm=60,sectionHeightMm=40}=req.body;
   const lengthMeters=Number(lengthM);
   const label=String(lengthLabel||'').trim();
+  const width=Number(sectionWidthMm);
+  const height=Number(sectionHeightMm);
   const lengthMm=Number.isFinite(lengthMeters)&&lengthMeters>0?Math.round(lengthMeters*1000):null;
-  if(!code || !label || !Number.isInteger(lengthMm) || lengthMm<=0) return res.status(400).json({error:'Укажите код, числовую длину для расчётов и текстовое обозначение длины'});
+  if(!label || !Number.isInteger(lengthMm) || lengthMm<=0 || !Number.isInteger(width) || width<=0 || !Number.isInteger(height) || height<=0)
+    return res.status(400).json({error:'Укажите числовую длину, обозначение длины и размеры сечения'});
+  const code=`${width}x${height}-${lengthMm}`;
+  const existing=(await pool.query('SELECT id,active FROM products WHERE code=$1',[code])).rows[0];
+  if(existing) return res.status(409).json({error: existing.active ? 'Такой типоразмер уже существует' : 'Такой типоразмер уже есть в архиве'});
   const r=await pool.query('INSERT INTO products(code,length_mm,length_label,section_width_mm,section_height_mm) VALUES($1,$2,$3,$4,$5) RETURNING *',
-    [code,lengthMm,label,Number(sectionWidthMm),Number(sectionHeightMm)]);
+    [code,lengthMm,label,width,height]);
   await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,after_data) VALUES($1,'create','product',$2,$3)",[req.user.sub,r.rows[0].id,JSON.stringify(r.rows[0])]);
   res.status(201).json(r.rows[0]);
 }));
