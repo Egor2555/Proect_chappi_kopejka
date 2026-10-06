@@ -1349,7 +1349,7 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const missing=produced.filter(x=>x.rate_minor===null).map(x=>(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(x.length_label || ((x.length_m||'')+' м')));
     if(missing.length) throw new Error('Не заданы расценки: '+missing.join(', '));
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
-      array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',w.is_brigadier) ORDER BY w.display_name) workers
+      array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',a.was_brigadier) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
       WHERE a.was_brigadier=false
         AND EXISTS (
