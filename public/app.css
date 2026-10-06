@@ -9,3 +9,9 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
 @media(max-width:650px){.order-table-head,.order-item-row{grid-template-columns:minmax(125px,1.5fr) repeat(3,minmax(55px,.7fr));font-size:.88rem}.order-table-head{font-size:.72rem}.order-size{font-size:.9rem}.order-num strong{font-size:.95rem}}
 @media(max-width:600px){:root{font-size:16px}main{margin:12px auto;padding:0 10px}.panel,.card{padding:16px;border-radius:15px}.topbar{padding:12px 14px}.topbar strong{font-size:17px}.tabs button{padding:10px 14px}.row>*{min-width:100%}.top-actions{min-width:auto!important}.top-actions button{min-width:auto}}
 .checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0}.checklist label{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e5e5ea;border-radius:11px;margin:0}.checklist input{width:22px;height:22px;margin:0}.check-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #e5e5ea}.check-row input{width:22px;height:22px;margin:0}
+
+/* Chappi Edition: monthly close readiness, calm iOS-style actions. */
+.close-month-ready{background:var(--green)!important;color:#fff!important;width:100%;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.close-month-not-ready{background:var(--red)!important;color:#fff!important;width:100%;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.ios-info-panel{background:#fff;border:1px solid #d1d1d6;border-radius:14px;padding:16px 18px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,.08);color:var(--text)}
+.ios-info-panel strong{display:block;font-size:17px;margin-bottom:6px}.ios-info-panel p{margin:6px 0;color:var(--muted);line-height:1.4}.ios-info-panel p:last-child{color:var(--text);font-weight:600}
