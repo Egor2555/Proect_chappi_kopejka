@@ -28,3 +28,41 @@ main{max-width:1100px;margin:22px auto;padding:0 16px}.panel,.card{background:va
 
 /* Chappi Edition: worker open-access login action */
 .login form button[type="submit"].open-access{background:var(--green);color:#fff}
+
+
+/* Chappi Edition: brigadier daily report — one calm iOS-style card, no order highlighting. */
+.daily-report-window{padding:22px;margin-bottom:16px}
+.daily-report-head{display:flex;align-items:flex-start;justify-content:space-between}
+.daily-report-head h2{margin:0 0 5px}
+.daily-report-date{margin:0;color:var(--muted)}
+.daily-report-section{padding:18px 0;border-top:1px solid #e5e5ea}
+.daily-report-section:first-of-type{margin-top:16px}
+.daily-report-section h3{margin:0 0 12px;font-size:18px}
+.daily-report-status-actions{display:flex;gap:8px}
+.daily-report-status-actions button{flex:1}
+.daily-report-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.daily-report-section-title h3{margin:0}
+.daily-report-section-title button{min-height:42px;padding:9px 13px}
+.daily-report-workers{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.daily-report-worker{display:flex;align-items:center;gap:10px;padding:11px 12px;margin:0;border:1px solid #e5e5ea;border-radius:11px;font-weight:500;background:#fff}
+.daily-report-worker input{width:21px;height:21px;margin:0;flex:0 0 auto}
+.daily-report-products{display:grid;gap:8px}
+.daily-report-product{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #e5e5ea}
+.daily-report-product:last-child{border-bottom:0}
+.daily-report-product span{font-weight:600}
+.daily-report-product input,.daily-report-product select{margin:0}
+.daily-extra-row{grid-template-columns:minmax(0,1fr) 150px auto}
+.daily-extra-row button{min-height:46px}
+.daily-report-summary{margin:0 0 16px}
+.daily-report-summary>div{padding:14px 0;border-top:1px solid #e5e5ea;line-height:1.55}
+.daily-report-summary strong{display:block;font-size:18px;margin-bottom:5px}
+.daily-report-summary span{display:block;color:var(--muted)}
+.daily-report-summary button{margin-top:12px}
+@media(max-width:600px){
+  .daily-report-window{padding:18px}
+  .daily-report-section-title{align-items:flex-start;flex-direction:column}
+  .daily-report-section-title button{width:100%}
+  .daily-report-product{grid-template-columns:minmax(0,1fr) 125px}
+  .daily-extra-row{grid-template-columns:minmax(0,1fr) 125px}
+  .daily-extra-row button{grid-column:1/-1;width:100%}
+}
