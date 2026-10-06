@@ -750,12 +750,12 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
 
     // Освободившийся склад не должен ждать следующего заказа:
     // автоматически передаём его первому подходящему незавершённому заказу.
-    const candidateOrders=(await c.query(`SELECT DISTINCT o.id
+    const candidateOrders=(await c.query(`SELECT DISTINCT o.id,o.priority,o.created_at
       FROM orders o
       JOIN order_items oi ON oi.order_id=o.id
       WHERE o.status IN ('active','queued')
         AND oi.product_id IN (SELECT product_id FROM order_items WHERE order_id=$1)
-      ORDER BY o.priority DESC,o.created_at ASC
+      ORDER BY o.priority DESC,o.created_at ASC,o.id ASC
       FOR UPDATE OF o`,[orderId])).rows;
     for(const candidate of candidateOrders) {
       await autoAllocateFreeStockToOrder(c,candidate.id,req.user.sub);
