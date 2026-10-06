@@ -79,15 +79,30 @@ async function orders(){
   if(form){
     const box=$('#orderItems');
     const addRow=(productId='',qty='')=>{
-      const used=[...box.querySelectorAll('select[name="productId"]')].map(x=>x.value);
-      const available=state.products.filter(p=>p.active&&(!used.includes(String(p.id))||String(p.id)===String(productId)));
-      if(!available.length){notify('Все доступные типоразмеры уже добавлены','error');return}
+      const initial=state.products.find(p=>p.active&&String(p.id)===String(productId))||state.products.find(p=>p.active);
+      if(!initial){notify('Нет доступных типоразмеров','error');return}
       const row=document.createElement('div');row.className='row orderItem';
-      row.innerHTML='<label>Типоразмер<select name="productId">'+available.map(p=>'<option value="'+p.id+'" '+(String(p.id)===String(productId)?'selected':'')+'>'+formatProduct(p)+'</option>').join('')+'</select></label>'+
+      const diameters=[...new Map(state.products.filter(p=>p.active).map(p=>[p.section_width_mm+'×'+p.section_height_mm,{w:p.section_width_mm,h:p.section_height_mm}])).values()];
+      row.innerHTML='<label>Диаметр<select name="section">'+diameters.map(d=>'<option value="'+d.w+'×'+d.h+'" '+(String(d.w+'×'+d.h)===String(initial.section_width_mm+'×'+initial.section_height_mm)?'selected':'')+'>'+d.w+'×'+d.h+'</option>').join('')+'</select></label>'+
+        '<label>Длина<select name="length"></select></label>'+
         '<label>Количество<input name="requiredQty" type="number" min="1" step="1" inputmode="numeric" value="'+escapeHtml(qty||'')+'" required></label>'+
         '<button type="button" class="secondary">Убрать</button>';
+      const section=row.querySelector('[name="section"]'), length=row.querySelector('[name="length"]');
+      const syncLengths=()=>{
+        const [w,h]=section.value.split('×');
+        const used=[...box.querySelectorAll('.orderItem')].filter(x=>x!==row).map(x=>x.querySelector('[name="productId"]')?.value).filter(Boolean);
+        const products=state.products.filter(p=>p.active&&String(p.section_width_mm)===w&&String(p.section_height_mm)===h);
+        length.innerHTML=products.map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+'</option>').join('');
+        const match=products.find(p=>String(p.id)===String(productId));
+        if(match)length.value=String(match.id);
+        const hidden=row.querySelector('[name="productId"]')||document.createElement('input');
+        hidden.type='hidden';hidden.name='productId';row.append(hidden);
+        hidden.value=length.value;
+      };
+      length.addEventListener('change',()=>{row.querySelector('[name="productId"]').value=length.value});
+      section.addEventListener('change',()=>{productId='';syncLengths()});
       row.querySelector('button').onclick=()=>row.remove();
-      box.append(row);
+      box.append(row);syncLengths();
     };
     $('#addOrderItem').onclick=()=>addRow();
     addRow();
