@@ -398,7 +398,7 @@ async function shipments(){
  const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>{const prefix=i.order_number?escapeHtml(i.order_number)+' · ':'';const extra=i.order_number?'':' · со склада';return prefix+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity+extra;}).join(', ')+'</p>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1>'+
    (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form></div>':'')+
-   '<div class="card"><h2>Текущие заказы</h2>'+orderCards(state.orders.filter(o=>o.status!=='archived'),true)+'</div>'+
+
    '<div class="card"><h2>Всего отправлено</h2><p class="muted">За текущий месяц · по сохранённым отгрузкам</p>'+shippedWindow+(canShip?'<div class="shipment-month-actions"><button id="closeMonthBtn" class="danger">Закрыть месяц</button><button id="reopenMonthBtn" class="secondary" hidden>Продолжить месяц</button></div>':'')+'</div>'+
    '<div class="card"><h2>История отправок</h2>'+(history||'<p class="empty">Отправок пока нет.</p>')+'</div>';
  const f=$('#shipmentForm');
