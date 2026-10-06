@@ -287,7 +287,7 @@ async function people(){
  const activeWorkers=state.workers.filter(w=>w.active);
  const archivedWorkers=state.workers.filter(w=>!w.active);
  $('#people').innerHTML='<h1>Коллектив</h1>'+
- '<div class="card"><p class="muted">Администратор один раз добавляет работников. Действия с конкретным работником — через меню ⋮.</p><div class="worker-list">'+
+ '<div class="card"><p class="muted">Администратор добавляет и убирает работников с коллектива.</p><div class="worker-list">'+
  activeWorkers.map(w=>'<div class="worker-list-row"><span><strong>'+escapeHtml(w.display_name)+'</strong>'+(w.is_brigadier?' <span class="worker-role-status">· Бригадир</span>':'')+'</span>'+(canManage?'<div class="worker-actions"><button type="button" class="worker-menu" data-id="'+w.id+'" aria-label="Действия">⋮</button><div class="worker-context-menu" data-menu-id="'+w.id+'" hidden>'+
  (w.is_brigadier?'<button type="button" class="worker-action" data-action="remove-brigadier" data-id="'+w.id+'">Снять с должности бригадира</button>':'<button type="button" class="worker-action" data-action="make-brigadier" data-id="'+w.id+'">Назначить бригадиром</button>')+
  '<button type="button" class="worker-action worker-dismiss" data-action="archive" data-id="'+w.id+'">Уволить</button>'+
