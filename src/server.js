@@ -645,7 +645,7 @@ app.post('/api/attendance', auth, roles('brigadier'), asyncRoute(async (req,res)
     await c.query('DELETE FROM attendance_entries WHERE work_date=$1 AND team_id=$2',[workDate,teamId]);
     const rows=[];
     for(const workerId of workerIds){
-      const r=await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,created_by) VALUES($1,$2,$3,$4) RETURNING *',[workDate,teamId,workerId,false,req.user.sub]);
+      const r=await c.query('INSERT INTO attendance_entries(work_date,team_id,worker_id,was_brigadier,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *',[workDate,teamId,workerId,false,req.user.sub]);
       rows.push(r.rows[0]);
     }
     await audit(c,req.user.sub,'replace_daily_attendance','attendance',teamId,{workDate,workers:before},{workDate,workerIds});
