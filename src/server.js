@@ -712,7 +712,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
   const result=await tx(async c=>{
     const order=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
     if(!order) throw new Error('Заказ не найден');
-    if(['cancelled','archived'].includes(order.status)) throw new Error('Заказ уже отменён или находится в архиве');
+    if(['cancelled','archived','closed'].includes(order.status)) throw new Error('Закрытый, отменённый или архивный заказ нельзя изменить');
     const shipmentCount=Number((await c.query('SELECT COUNT(*)::int n FROM shipments WHERE order_id=$1',[orderId])).rows[0].n);
     // Already shipped units remain historical facts; only the unshipped remainder is cancelled.
     const reservations=(await c.query(`SELECT r.id,r.reference_id,r.quantity_delta,
@@ -976,7 +976,7 @@ app.post('/api/orders/:id/activate', auth, roles('admin'), asyncRoute(async (req
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:order-queue'))");
     const target=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
     if(!target) throw new Error('Заказ не найден');
-    if(['completed','cancelled','archived'].includes(target.status)) throw new Error('Завершённый или архивный заказ нельзя сделать активным');
+    if(['completed','closed','cancelled','archived'].includes(target.status)) throw new Error('Завершённый, полностью отгруженный или архивный заказ нельзя сделать активным');
     const current=(await c.query("SELECT * FROM orders WHERE status='active' AND id<>$1 FOR UPDATE",[target.id])).rows[0];
     if(current){
       const missing=(await c.query('SELECT COALESCE(SUM(GREATEST(i.required_qty-COALESCE(d.done,0),0)),0)::int qty FROM order_items i LEFT JOIN LATERAL (SELECT SUM(a.quantity)::int done FROM production_allocations a WHERE a.order_id=i.order_id AND a.product_id=i.product_id AND a.voided_at IS NULL) d ON true WHERE i.order_id=$1',[current.id])).rows[0].qty;
@@ -1112,6 +1112,18 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
           VALUES($1,'shipment_out',$2,$3,$4,$5,$6)`,
           [item.productId,-freeTaken,orderId,sh.id,req.user.sub,'Отгрузка '+shipmentNumber]);
       }
+    }
+    // Полная отгрузка = заказ принят клиентом и оплачен.
+    // Такой заказ больше нельзя отменять, менять или возвращать в очередь.
+    if(orderId){
+      const left=Number((await c.query(`SELECT COALESCE(SUM(GREATEST(i.required_qty-COALESCE(x.shipped,0),0)),0)::int qty
+        FROM order_items i
+        LEFT JOIN LATERAL (
+          SELECT SUM(si.quantity)::int shipped FROM shipment_items si
+          JOIN shipments s ON s.id=si.shipment_id
+          WHERE s.order_id=i.order_id AND si.product_id=i.product_id
+        ) x ON true WHERE i.order_id=$1`,[orderId])).rows[0].qty);
+      if(left===0) await c.query("UPDATE orders SET status='closed',completed_at=COALESCE(completed_at,now()) WHERE id=$1",[orderId]);
     }
     await audit(c,req.user.sub,'create','shipment',sh.id,null,sh);
     return sh;
