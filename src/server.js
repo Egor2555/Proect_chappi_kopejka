@@ -540,8 +540,7 @@ app.post('/api/teams', auth, roles('admin'), asyncRoute(async (_req,res) => {
 
 app.patch('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async (req,res) => {
   const workerId=String(req.params.id);
-  const effectiveFrom=String(req.body?.effectiveFrom||new Date().toISOString().slice(0,10));
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveFrom)) return res.status(400).json({error:'Укажите дату назначения бригадира'});
+  const effectiveFrom=new Date().toISOString().slice(0,10);
   const result=await tx(async c=>{
     const w=(await c.query('SELECT * FROM workers WHERE id=$1 AND active=true FOR UPDATE',[workerId])).rows[0];
     if(!w) throw new Error('Работник не найден или архивирован');
