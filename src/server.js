@@ -69,9 +69,10 @@ async function ensureAccessProfiles() {
         SELECT (after_data->>'id')::uuid AS worker_id,
           created_at::date AS effective_from,
           created_at AS effective_at
-        FROM audit_log
+        FROM audit_log a
         WHERE action='assign_brigadier' AND entity_type='worker'
           AND after_data ? 'id'
+          AND EXISTS (SELECT 1 FROM workers w WHERE w.id=(a.after_data->>'id')::uuid)
         ORDER BY created_at
       ) x;
     END IF;
