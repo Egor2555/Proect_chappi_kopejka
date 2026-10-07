@@ -474,7 +474,8 @@ async function shipments(){
        warehouse.innerHTML='<h3>Дополнительно со склада</h3><p class="muted">Эти изделия не относятся к заказу и записываются в эту же отправку как складские.</p>';
        for(const x of stockItems){
          const row=document.createElement('div');row.className='row shipmentItem';row.dataset.source='warehouse';
-         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
+         const productId=x.productId||x.product_id||'';
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+escapeHtml(productId)+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
          warehouse.append(row);
        }
        box.append(warehouse);
