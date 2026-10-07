@@ -179,3 +179,5 @@ button{
 .monthly-rates-card .monthly-rate-row input{width:100%;box-sizing:border-box}
 .monthly-rates-card .save-all-monthly-rates{margin-top:14px;width:100%}
 @media(max-width:720px){.monthly-rates-card{max-width:none}.monthly-rates-card .monthly-rate-row{grid-template-columns:minmax(0,1fr) 120px}}
+
+.admin-danger{border:1px solid #f1c5c5;background:#fffafa}.admin-danger .danger{background:#d94b4b!important;color:#fff!important;border-color:#d94b4b!important}.admin-danger .danger:active{transform:scale(.98)}
