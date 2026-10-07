@@ -557,9 +557,9 @@ async function people(){
    if(state.user.role==='admin' && !r.closed){
      const rateItems=r.items.filter(x=>x.rate_minor===null);
      if(rateItems.length){
-       html+='<div class="card monthly-rates-card"><h2>Расценки для закрытия месяца</h2><p class="muted">Введите расценку по каждому типоразмеру, для которого она ещё не задана.</p><div id="monthlyRates">';
-       html+=rateItems.map(x=>'<div class="card"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))+'</strong><label>Расценка<input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></label><button type="button" class="saveMonthlyRate" data-product-id="'+x.product_id+'">Сохранить расценку</button></div>').join('');
-       html+='</div></div>';
+       html+='<div class="card monthly-rates-card"><h2>Расценки для закрытия месяца</h2><p class="muted">Введите расценку по каждому типоразмеру.</p><div id="monthlyRates">';
+       html+=rateItems.map(x=>'<div class="monthly-rate-row"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))+'</strong><input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></div>').join('');
+       html+='<button type="button" id="saveAllMonthlyRates" class="save-all-monthly-rates">Сохранить расценки</button></div></div>';
      }
    }
    if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))).join(', ')+'</p>';
@@ -577,12 +577,19 @@ async function people(){
      html+='<p class="muted">Остаток копеек распределяется автоматически случайным выбором среди работников, реально работавших в оплаченных производственных днях.'+(pending?' Сейчас накоплено '+money(r.happyKopeck.residualMinor)+'.':'')+'</p>';
    }
    $('#reportResult').innerHTML=html;
-   document.querySelectorAll('.saveMonthlyRate').forEach(b=>b.onclick=async()=>{
-     const input=document.querySelector('.monthlyRateInput[data-product-id="'+b.dataset.productId+'"]');
-     const value=input?.value;
-     if(value===''||Number(value)<0){notify('Введите расценку','error');return}
-     try{await api('/rates',{method:'POST',body:JSON.stringify({productId:b.dataset.productId,periodMonth:m+'-01',amountMinor:Math.round(Number(value)*100)})});notify('Расценка сохранена','success');await load()}catch(e){notify(e.message,'error')}
-   });
+   const saveAllRates=$('#saveAllMonthlyRates');
+   if(saveAllRates)saveAllRates.onclick=async()=>{
+     const inputs=[...document.querySelectorAll('.monthlyRateInput')];
+     const values=inputs.map(input=>({input,value:String(input.value??'').trim()}));
+     if(values.some(x=>x.value===''||Number(x.value)<0||!Number.isFinite(Number(x.value)))){
+       notify('Введите все расценки','error');return
+     }
+     saveAllRates.disabled=true;
+     try{
+       for(const x of values) await api('/rates',{method:'POST',body:JSON.stringify({productId:x.input.dataset.productId,periodMonth:m+'-01',amountMinor:Math.round(Number(x.value)*100)})});
+       notify('Все расценки сохранены','success');await load()
+     }catch(e){notify(e.message,'error')}finally{saveAllRates.disabled=false}
+   };
    const b=$('#closeMonth');
    if(b)b.onclick=async()=>{
      const currentMissing=r.missingRates||[];
