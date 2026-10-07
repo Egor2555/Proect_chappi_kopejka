@@ -1410,17 +1410,17 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
     return res.status(403).json({error:'Работнику доступен отчёт только за текущий месяц; прошлые периоды находятся в архиве'});
   const start=month+'-01';
   const monthState=(await pool.query('SELECT brigadier_closed_at,reopened_at FROM month_states WHERE period_month=$1',[start])).rows[0]||null;
-  const r=await pool.query(`SELECT p.id AS product_id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.length_label,COUNT(DISTINCT pe.id)::int entries,
-    COALESCE(SUM(sa.quantity),0)::int quantity,
-    r.amount_minor::text rate_minor,    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(sa.quantity),0)::bigint*r.amount_minor)::text END total_minor
+  const r=await pool.query(`SELECT p.id AS product_id,p.section_width_mm,p.section_height_mm,p.length_mm / 1000.0 AS length_m,p.length_label,
+    COALESCE(SUM(si.quantity),0)::int quantity,
+    r.amount_minor::text rate_minor,
+    CASE WHEN r.amount_minor IS NULL THEN NULL ELSE (COALESCE(SUM(si.quantity),0)::bigint*r.amount_minor)::text END total_minor
     FROM products p
     JOIN shipment_items si ON si.product_id=p.id
-    JOIN shipments s ON s.id=si.shipment_id AND s.payroll_month >= $1::date AND s.payroll_month < ($1::date + INTERVAL '1 month')
-    JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
-    JOIN inventory_movements im ON im.id=sa.inventory_movement_id
-    JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
+    JOIN shipments s ON s.id=si.shipment_id
+      AND s.payroll_month >= $1::date
+      AND s.payroll_month < ($1::date + INTERVAL '1 month')
     LEFT JOIN rates r ON r.product_id=p.id AND r.period_month=$1::date
-    GROUP BY p.id,r.amount_minor ORDER BY p.length_mm`,[start]);
+    GROUP BY p.id,r.amount_minor ORDER BY p.length_mm,p.id`,[start]);
   const produced=r.rows.filter(x=>Number(x.quantity)>0);
   const missing=produced.filter(x=>x.rate_minor===null).map(x=>({section_width_mm:x.section_width_mm,section_height_mm:x.section_height_mm,length_m:x.length_m,length_label:x.length_label}));
   const totals=produced.reduce((a,x)=>({quantity:a.quantity+Number(x.quantity),totalMinor:a.totalMinor+(x.total_minor?BigInt(x.total_minor):0n)}),{quantity:0,totalMinor:0n});
