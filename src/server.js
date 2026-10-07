@@ -822,8 +822,7 @@ app.post('/api/orders', auth, roles('admin'), asyncRoute(async (req,res) => {
 
 app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,res) => {
   const orderId=String(req.params.id);
-  const reason=String(req.body.reason||'').trim();
-  if(!reason) return res.status(400).json({error:'Укажите причину отмены заказа'});
+  const reason=String(req.body.reason||'Удаление заказа').trim() || 'Удаление заказа';
   const result=await tx(async c=>{
     const order=(await c.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE',[orderId])).rows[0];
     if(!order) throw new Error('Заказ не найден');
