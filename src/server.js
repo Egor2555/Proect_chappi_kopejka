@@ -1438,7 +1438,7 @@ app.get('/api/reports/monthly', auth, asyncRoute(async (req,res) => {
       const nameMap=new Map(names.map(x=>[String(x.id),x.display_name]));
       const frozen=closureRow.totals.earnings
         .filter(x=>req.user.role!=='worker' || String(x.workerId)===String(req.user.workerId))
-        .map(x=>({worker_id:x.workerId,display_name:x.displayName||nameMap.get(String(x.workerId))||'Архивный работник',amount_minor:String(x.amountMinor),work_days:0,daily_details:[]}))
+        .map(x=>({worker_id:x.workerId,display_name:x.displayName||nameMap.get(String(x.workerId))||'Архивный работник',amount_minor:String(x.amountMinor),work_days:Number(x.workDays||0),daily_details:Array.isArray(x.dailyDetails)?x.dailyDetails:[]}))
         .sort((a,b)=>a.display_name.localeCompare(b.display_name,'ru'));
       earnings={rows:frozen};
     } else earnings={rows:[]};
@@ -1580,10 +1580,15 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     }
     const totalMinor=produced.reduce((sum,x)=>sum+BigInt(x.total_minor||0),0n);
     const workerNames=new Map(attendance.flatMap(day=>day.workers.map(person=>[String(person.workerId),person.name])));
+    const earningsByWorker=new Map(calculation.earnings.map(x=>[String(x.workerId),x]));
     const snapshot={items,total:{quantity:produced.reduce((n,x)=>n+Number(x.quantity),0),totalMinor:totalMinor.toString()},
-      earnings:[...workerTotals.entries()].map(([workerId,amount])=>({
-        workerId,displayName:workerNames.get(String(workerId))||'Архивный работник',amountMinor:amount.toString()
-      })),
+      earnings:[...workerTotals.entries()].map(([workerId,amount])=>{
+        const base=earningsByWorker.get(String(workerId));
+        return {
+          workerId,displayName:workerNames.get(String(workerId))||'Архивный работник',amountMinor:amount.toString(),
+          workDays:Number(base?.workDays||0),dailyDetails:Array.isArray(base?.dailyDetails)?base.dailyDetails:[]
+        };
+      }),
       ratesEntered:true,
       happyKopeck:{status:residualMinor>0n?'approved':'not_needed',residualMinor:residualMinor.toString(),winnerId:happyKopeck.winnerId,badge:happyKopeck.badge}};
     const closure=(await c.query('INSERT INTO monthly_closures(period_month,totals,closed_by) VALUES($1,$2,$3) RETURNING *',
@@ -1637,7 +1642,9 @@ app.get('/api/archive/months', auth, asyncRoute(async (req,res) => {
     row.totals={...row.totals,earnings:frozen.map(x=>({
       workerId:x.workerId,
       displayName:x.displayName||nameMap.get(String(x.workerId))||'Архивный работник',
-      amountMinor:String(x.amountMinor)
+      amountMinor:String(x.amountMinor),
+      workDays:Number(x.workDays||0),
+      dailyDetails:Array.isArray(x.dailyDetails)?x.dailyDetails:[]
     }))};
   }
   res.json(r.rows);
