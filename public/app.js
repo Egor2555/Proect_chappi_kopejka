@@ -94,7 +94,40 @@ if(recoveryForm) recoveryForm.addEventListener('submit',async e=>{
     $('#loginForm [name=pin]').value='';
   }catch(err){$('#recoveryError').textContent=err.message}
 });
-async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=true);const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');document.querySelectorAll('[data-hide-brigadier]').forEach(x=>x.hidden=state.user.role==='brigadier');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
+async function boot(){
+  try{
+    state.user=(await api('/me')).user;
+  }catch(e){
+    localStorage.removeItem('chappiToken');
+    state.token=null;
+    $('#loginView').hidden=false;
+    $('#appView').hidden=true;
+    $('#loginError').textContent=e.message||'Требуется вход в систему';
+    return;
+  }
+  $('#loginView').hidden=true;
+  $('#appView').hidden=false;
+  $('#userBadge').textContent=roleName(state.user.role);
+  $('#logoutGlobal').hidden=false;
+  $('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};
+  document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');
+  document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=true);
+  const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;
+  document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');
+  document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');
+  document.querySelectorAll('[data-hide-brigadier]').forEach(x=>x.hidden=state.user.role==='brigadier');
+  document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));
+  try{
+    await loadBase();
+    showTab('home');
+    await renderTab('home');
+  }catch(e){
+    console.error('Chappi boot data error',e);
+    showTab('home');
+    const notice=$('#notice');
+    if(notice) notice.innerHTML='<div class="error">Не удалось загрузить данные приложения. Вход выполнен. Обновите страницу.</div>';
+  }
+}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';const s=Number(n.toFixed(3)).toString().replace('.',',');return s+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}
