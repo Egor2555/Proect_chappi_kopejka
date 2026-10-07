@@ -93,8 +93,8 @@ if(recoveryForm) recoveryForm.addEventListener('submit',async e=>{
 async function boot(){try{state.user=(await api('/me')).user;$('#loginView').hidden=true;$('#appView').hidden=false;$('#userBadge').textContent=roleName(state.user.role);$('#logoutGlobal').hidden=false;$('#logoutGlobal').onclick=()=>{localStorage.removeItem('chappiToken');state.token=null;location.reload()};document.querySelectorAll('[data-admin]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-producer]').forEach(x=>x.hidden=true);const stockTab=document.querySelector('[data-tab="stock"]');if(stockTab)stockTab.hidden=true;document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');document.querySelectorAll('[data-hide-brigadier]').forEach(x=>x.hidden=state.user.role==='brigadier');document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));await loadBase();showTab('home');await renderTab('home')}catch(e){localStorage.removeItem('chappiToken');state.token=null;$('#loginView').hidden=false;$('#appView').hidden=true}}
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
-function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';return Number(n.toFixed(3)).toString()+' м'}
-function normalizeLengthLabel(v){const s=String(v??'').trim();if(!s)return '';return s.replace(/\s*(метр(?:а|ов)?|м)(?=\s|$)/gi,' $1').replace(/\s+/g,' ').trim()}
+function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';const s=Number(n.toFixed(3)).toString().replace('.',',');return s+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}
+function normalizeLengthLabel(v){const s=String(v??'').trim();if(!s)return '';const m=s.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(?:метр(?:а|ов)?|м)?$/i);if(m){const n=Number(String(m[1]).replace(',','.'));if(Number.isFinite(n)){const num=n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'').replace('.',',');return num+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}}return s.replace(/\s+/g,' ').trim()}
 function formatProductLength(p){return escapeHtml(normalizeLengthLabel(p?.length_label)||formatLength(p?.length_m))}
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+' · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
@@ -123,13 +123,13 @@ async function home(){
    const monthRows=(d.month||[]).filter(x=>Number(x.quantity)>0);
    const monthTotal=monthRows.reduce((sum,x)=>sum+Number(x.quantity||0),0);
    const monthCard='<div class="card"><h2>Произведено за текущий месяц</h2>'+(monthRows.length
-     ? simpleTable(monthRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']])+'<p><strong>Всего:</strong> '+monthTotal+' шт.</p>'
+     ? simpleTable(monthRows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(formatProductLength(x)})),[['size','Типоразмер'],['quantity','Количество']])+'<p><strong>Всего:</strong> '+monthTotal+' шт.</p>'
      : '<div class="empty">В этом месяце изделия ещё не произведены.</div>')+'</div>';
-   $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>'+monthCard+'<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+   $('#home').innerHTML='<h1>Сегодня</h1>'+daily+'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div>'+monthCard+'<div class="card"><h2>Склад</h2>'+((d.stock||[]).filter(x=>Number(x.quantity)>0).length?simpleTable((d.stock||[]).filter(x=>Number(x.quantity)>0).map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(formatProductLength(x)})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
    return;
  }
  const stock=(d.stock||[]).filter(x=>Number(x.quantity)>0);
- $('#home').innerHTML='<h1>Сегодня</h1>'+ (state.user.role==='admin'?daily:(state.user.role==='brigadier'?'<div id="dailyReportWindow"></div>':'')) +'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m))+' '+(x.length_label?'':'м')})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
+ $('#home').innerHTML='<h1>Сегодня</h1>'+ (state.user.role==='admin'?daily:(state.user.role==='brigadier'?'<div id="dailyReportWindow"></div>':'')) +'<div class="card"><h2>Заказы и приоритеты</h2>'+orderCards(d.orders)+'</div><div class="card"><h2>Склад</h2>'+(stock.length?simpleTable(stock.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(formatProductLength(x)})),[['size','Типоразмер'],['quantity','Количество']]):'<div class="empty">На складе пусто</div>')+'</div>';
  if(state.user.role==='brigadier') await production('#dailyReportWindow');
 }
 async function orders(){
@@ -239,7 +239,7 @@ function orderCards(rows,editable=false){
       ? 'order-active'
       : (o.status==='queued' && !rows.slice(0,index).some(x=>x.status==='queued') ? 'order-next' : '');
     const items=(o.items||[]).map(i=>{
-      const length=escapeHtml(i.length_label||formatMeters(i.lengthM||i.length_m));
+      const length=formatProductLength(i);
       const remaining=Number(i.remaining||0);
       const done=Number(i.done||0);
       return '<div class="order-item-row"><div class="order-size"><strong>'+((i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' × '+length)+'</strong></div><div class="order-num"><span>Нужно</span><strong>'+Number(i.required||0)+'</strong></div><div class="order-num"><span>Сделано</span><strong>'+done+'</strong></div><div class="order-num"><span>Осталось</span><strong>'+(remaining>0?remaining:'✓')+'</strong></div></div>';
@@ -378,7 +378,7 @@ async function production(target='#production'){
 }
 
 function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+(normalizeLengthLabel(p.length_label)||formatMeters(p.length_m)));}
-async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m))})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
+async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m))})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
@@ -508,7 +508,7 @@ async function people(){
  const load=async()=>{
    const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
    const missing=r.missingRates||[];
-   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m))),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
+   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m))),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
    const financeVisible=state.user.role!=='worker';
    let html='<h2>Отгружено и подлежит оплате за '+escapeHtml(m)+'</h2>';
    html+=financeVisible
@@ -521,11 +521,11 @@ async function people(){
      const rateItems=r.items.filter(x=>x.rate_minor===null);
      if(rateItems.length){
        html+='<div class="card"><h2>Расценки для закрытия месяца</h2><p class="muted">Введите расценку по каждому типоразмеру, для которого она ещё не задана.</p><div id="monthlyRates">';
-       html+=rateItems.map(x=>'<div class="card"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m)))+'</strong><label>Расценка<input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></label><button type="button" class="saveMonthlyRate" data-product-id="'+x.product_id+'">Сохранить расценку</button></div>').join('');
+       html+=rateItems.map(x=>'<div class="card"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))+'</strong><label>Расценка<input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></label><button type="button" class="saveMonthlyRate" data-product-id="'+x.product_id+'">Сохранить расценку</button></div>').join('');
        html+='</div></div>';
      }
    }
-   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m)))).join(', ')+'</p>';
+   if(missing.length) html+='<p class="error"><strong>Для закрытия не хватает расценок:</strong> '+missing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))).join(', ')+'</p>';
    if(state.user.role==='admin' && !r.closed){
      const ready=!missing.length && r.brigadierClosed && !r.reopened;
      if(r.brigadierClosed && !r.reopened) html+='<p class="success"><strong>Бригадир закрыл месяц.</strong> Все дальнейшие действия готовы к финальному закрытию после ввода всех расценок.</p>';
@@ -550,7 +550,7 @@ async function people(){
    if(b)b.onclick=async()=>{
      const currentMissing=r.missingRates||[];
      if(currentMissing.length){
-       const list=currentMissing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatMeters(x.length_m)))).join('<br>');
+       const list=currentMissing.map(x=>((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))).join('<br>');
        $('#notice').innerHTML='<div class="ios-info-panel"><strong>Не все расценки введены</strong><p>Для закрытия месяца сначала укажите расценку для каждого типоразмера.</p><p>'+list+'</p></div>';
        return;
      }
@@ -574,7 +574,7 @@ async function products(){
    const rows=state.products.filter(p=>String(p.section_width_mm)===String(g.w)&&String(p.section_height_mm)===String(g.h))
      .sort((a,b)=>Number(a.length_m)-Number(b.length_m));
    return '<div class="product-section-card"><div class="product-section-title"><h2>'+g.w+'×'+g.h+'</h2><span class="muted">'+rows.length+' типоразмер'+(rows.length===1?'':'а')+'</span></div><div class="product-table-wrap"><table class="product-table"><thead><tr><th>Длина</th><th>Состояние</th><th></th></tr></thead><tbody>'+
-     rows.map(p=>'<tr><td><strong>'+escapeHtml(normalizeLengthLabel(p.length_label)||formatMeters(p.length_m)+' м')+'</strong></td><td><span class="'+(p.active?'product-status-active':'product-status-archived')+'">'+(p.active?'Активен':'Архив')+'</span></td><td class="product-delete-cell">'+(p.active?'<button type="button" class="product-delete" data-id="'+p.id+'"><span class="product-trash" aria-hidden="true">🗑</span><span>Удалить</span></button>':'')+'</td></tr>').join('')+
+     rows.map(p=>'<tr><td><strong>'+formatProductLength(p)+'</strong></td><td><span class="'+(p.active?'product-status-active':'product-status-archived')+'">'+(p.active?'Активен':'Архив')+'</span></td><td class="product-delete-cell">'+(p.active?'<button type="button" class="product-delete" data-id="'+p.id+'"><span class="product-trash" aria-hidden="true">🗑</span><span>Удалить</span></button>':'')+'</td></tr>').join('')+
      '</tbody></table></div></div>';
  }).join('');
  $('#products').innerHTML='<h1>Типоразмеры</h1><div class="card product-directory"><h2>Справочник типоразмеров</h2><p class="muted">Типоразмеры сгруппированы по сечению.</p>'+sectionCards+'</div><div class="card"><h2>Добавить типоразмер</h2><form id="productForm"><div class="product-add-row"><label>Сечение<select name="section"><option value="60×40">60 × 40 мм</option><option value="60×60">60 × 60 мм</option><option value="60×80">60 × 80 мм</option></select></label><label>Длина<input name="lengthM" type="number" min="0.001" step="0.001" required placeholder="2,5"></label></div><label>Обозначение<input name="lengthLabel" required placeholder="Например 2,5 метра"></label><button>Добавить</button></form></div>';
