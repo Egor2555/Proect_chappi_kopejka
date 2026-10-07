@@ -109,3 +109,53 @@ button,input,select,textarea{font-size:16px}
 .card h2{margin-bottom:11px}
 .actions{gap:7px}
 .actions button{min-width:120px}
+
+
+/* Chappi Edition: final unified iOS visual layer. */
+:root{
+  --surface:#ffffff;
+  --surface-secondary:#f2f2f7;
+  --separator:#d6d6da;
+  --blue-soft:#e9eef4;
+}
+body{
+  background:#f2f2f7;
+}
+.topbar{
+  min-height:58px;
+  box-shadow:0 1px 2px rgba(0,0,0,.03);
+}
+.panel,.card{
+  border:1px solid rgba(60,60,67,.08);
+  box-shadow:0 1px 2px rgba(0,0,0,.035),0 5px 16px rgba(0,0,0,.025);
+}
+input,select,textarea{
+  background:#f7f7f9;
+  border-color:#d6d6da;
+}
+input:focus,select:focus,textarea:focus{
+  background:#fff;
+}
+button{
+  box-shadow:0 1px 2px rgba(0,0,0,.06);
+}
+.secondary,
+.tabs button{
+  box-shadow:none;
+}
+.tabs button.active{
+  box-shadow:0 1px 2px rgba(0,0,0,.08);
+}
+.notice{
+  border:1px solid rgba(0,95,170,.10);
+}
+.order-active,.order-next{
+  box-shadow:0 1px 2px rgba(0,0,0,.03);
+}
+.product-section-card{
+  border-color:rgba(60,60,67,.12);
+  box-shadow:0 1px 2px rgba(0,0,0,.025);
+}
+.product-section-title{
+  background:#f2f2f7;
+}
