@@ -16,6 +16,10 @@ async function updateLoginProfile(profile){
   $('#loginError').textContent='';
   const pinLabel=$('#pinLabel'), pinInput=$('#loginForm [name=pin]'), submit=$('#loginForm button[type=submit]');
   if(profile==='worker'){
+    // Worker access may be open. Clear native required validation before the async status check
+    // so a slow profile-status request cannot block the login button on an invisible PIN field.
+    pinInput.required=false;
+    pinInput.disabled=false;
     try{
       const status=await api('/auth/profile-status');
       const enabled=!!status.workerPinEnabled;
