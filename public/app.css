@@ -167,3 +167,6 @@ button{
 .product-section-title{
   background:#f2f2f7;
 }
+
+/* Chappi Edition: restore action — quiet green iOS text button. */
+.product-restore{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-height:40px;padding:7px 4px;background:transparent!important;color:var(--green)!important;font-weight:600!important;box-shadow:none!important}.product-restore:active{transform:scale(.98)}
