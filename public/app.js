@@ -399,7 +399,7 @@ async function shipments(){
  const shippedWindow=shippedRows.length
    ? '<div class="shipment-total-rows">'+shippedRows.map(x=>'<div class="shipment-total-row"><span>'+escapeHtml(x.label)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('')+'</div><p><strong>Всего:</strong> '+shippedTotal+' шт.</p>'
    : '<div class="empty">В текущем месяце отправок ещё нет.</div>';
- const history=rows.map(x=>'<p><strong>'+escapeHtml(x.shipment_number)+'</strong> · '+formatDateDMY(x.shipped_at,true)+' · '+(x.items||[]).map(i=>{const prefix=i.order_number?escapeHtml(i.order_number)+' · ':'';const extra=i.order_number?'':' · со склада';return prefix+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+' × '+i.quantity+extra;}).join(', ')+'</p>').join('');
+ const history=rows.map(x=>'<div class="shipment-history-entry"><h3>'+escapeHtml(x.items?.[0]?.order_number||'Со склада')+'</h3><p class="shipment-history-date">'+formatDateDMY(x.shipped_at)+'</p><div class="shipment-history-items">'+(x.items||[]).map(i=>'<div class="shipment-history-item"><span>'+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(i.length_label||formatMeters(i.length_m))+'</span><strong>'+Number(i.quantity||0)+' шт.</strong></div>').join('')+'</div></div>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1>'+
    (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form></div>':'')+
 
