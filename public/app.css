@@ -89,6 +89,10 @@ main{max-width:1100px;margin:18px auto;padding:0 16px}.panel,.card{background:va
 
 /* Chappi Edition: shipment history rows */
 .shipment-history-entry{margin:14px 0;padding:12px 0;border-top:1px solid #e5e5ea}.shipment-history-entry:first-child{border-top:0;margin-top:0}.shipment-history-entry h3{margin:0 0 4px}.shipment-history-date{margin:0 0 10px;color:var(--muted);font-size:14px}.shipment-history-items{display:flex;flex-direction:column;gap:6px}.shipment-history-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid #f0f0f2}.shipment-history-item:last-child{border-bottom:0}.shipment-history-item span{min-width:0}.shipment-history-item strong{white-space:nowrap;font-weight:700}
+
+
+/* Chappi Edition: shipped totals rows */
+.shipment-total-rows{display:flex;flex-direction:column;gap:0;margin:10px 0}.shipment-total-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #f0f0f2}.shipment-total-row:last-child{border-bottom:0}.shipment-total-row span{min-width:0}.shipment-total-row strong{white-space:nowrap;font-weight:700}
 .shipment-source-section{margin:14px 0 18px;padding-top:12px;border-top:1px solid #e5e5ea}.shipment-source-section:first-child{border-top:0;padding-top:0}.shipment-source-section h3{margin:0 0 10px;font-size:16px}.shipment-warehouse-section{margin-top:20px}.shipment-order-option input{position:absolute;opacity:0;pointer-events:none}.shipment-order-option input:checked + .shipment-order-dot{background:var(--blue);border-color:var(--blue)}.shipment-order-option input:checked + .shipment-order-dot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}.shipment-order-option:active .shipment-order-dot{transform:scale(.94)}
 
 /* Chappi Edition: compact admin layout */
