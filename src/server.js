@@ -871,7 +871,8 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
 
     // Освободившийся склад не должен ждать следующего заказа:
     // автоматически передаём его первому подходящему незавершённому заказу.
-    const candidateOrders=(await c.query(`SELECT o.id,o.priority,o.created_at,o.status
+    const candidateOrders=(await c.query(`SELECT o.id,o.priority,o.created_at,o.status,
+             CASE WHEN o.status='active' THEN 0 ELSE 1 END AS status_rank
       FROM orders o
       WHERE o.status IN ('active','queued')
         AND EXISTS (
@@ -879,8 +880,7 @@ app.post('/api/orders/:id/cancel', auth, roles('admin'), asyncRoute(async (req,r
           WHERE oi.order_id=o.id
             AND oi.product_id IN (SELECT product_id FROM order_items WHERE order_id=$1)
         )
-      ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END,
-               o.priority DESC,o.created_at ASC,o.id ASC
+      ORDER BY status_rank,o.priority DESC,o.created_at ASC,o.id ASC
       FOR UPDATE OF o`,[orderId])).rows;
     for(const candidate of candidateOrders) {
       await autoAllocateFreeStockToOrder(c,candidate.id,req.user.sub);
@@ -954,10 +954,11 @@ async function autoAllocateProductionToOrders(c, productionEntry, userId) {
   const allocations=[];
   const candidates=(await c.query(`SELECT o.id,o.status,i.required_qty,
       COALESCE((SELECT SUM(a.quantity)::int FROM production_allocations a
-        WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done
+        WHERE a.order_id=o.id AND a.product_id=i.product_id AND a.voided_at IS NULL),0) done,
+      CASE WHEN o.status='active' THEN 0 ELSE 1 END AS status_rank
     FROM orders o JOIN order_items i ON i.order_id=o.id
     WHERE o.status IN ('active','queued') AND i.product_id=$1
-    ORDER BY CASE WHEN o.status='active' THEN 0 ELSE 1 END, o.priority DESC, o.created_at ASC, o.id ASC
+    ORDER BY status_rank,o.priority DESC, o.created_at ASC, o.id ASC
     FOR UPDATE OF o`,[productionEntry.product_id])).rows;
   for(const candidate of candidates){
     if(remaining<=0) break;
