@@ -1699,6 +1699,30 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
   res.status(201).json({ok:true,mode:'restore-business-data',...result});
 }));
 
+app.post('/api/admin/clean-test-data', auth, roles('admin'), asyncRoute(async (req,res) => {
+  if (String(req.body.confirm || '') !== 'ОЧИСТИТЬ ТЕСТОВЫЕ ДАННЫЕ')
+    return res.status(400).json({error:'Для очистки требуется точное подтверждение: ОЧИСТИТЬ ТЕСТОВЫЕ ДАННЫЕ'});
+  const result=await tx(async c=>{
+    await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:clean-test-data'))");
+    const bound=(await c.query("SELECT id,username,role,worker_id FROM users WHERE worker_id IS NOT NULL AND active=true")).rows;
+    if(bound.length) throw new Error('Очистка остановлена: к работникам привязаны профили доступа. Сначала отвяжите их от работников.');
+    const tables=['shipment_allocations','payment_entries','shipment_items','shipments','production_allocations','inventory_movements','production_entries','attendance_entries','worker_role_history','team_memberships','order_items','orders','daily_production_reports','monthly_worker_earnings','penny_events','monthly_closures','fund_entries','rates','month_states'];
+    const before={};
+    for(const table of tables) before[table]=Number((await c.query('SELECT COUNT(*)::int AS n FROM '+table)).rows[0].n);
+    before.products=Number((await c.query('SELECT COUNT(*)::int AS n FROM products')).rows[0].n);
+    before.workers=Number((await c.query('SELECT COUNT(*)::int AS n FROM workers')).rows[0].n);
+    for(const table of tables) await c.query('DELETE FROM '+table);
+    await c.query('DELETE FROM products');
+    await c.query('DELETE FROM workers');
+    const after={};
+    for(const table of tables) after[table]=Number((await c.query('SELECT COUNT(*)::int AS n FROM '+table)).rows[0].n);
+    after.products=Number((await c.query('SELECT COUNT(*)::int AS n FROM products')).rows[0].n);
+    after.workers=Number((await c.query('SELECT COUNT(*)::int AS n FROM workers')).rows[0].n);
+    await audit(c,req.user.sub,'clean_test_data','system','clean-test-data',before,{after,kept:['users','teams','audit_log','login_log']},'Очистка тестовых производственных данных');
+    return {before,after,kept:['users','teams','audit_log','login_log']};
+  });
+  res.status(201).json({ok:true,...result});
+}));
 app.get('/api/admin/export', auth, roles('admin'), asyncRoute(async (_req,res) => {
   const tables=['workers','teams','team_memberships','worker_role_history','month_states','daily_production_reports','products','rates','orders','order_items','monthly_worker_earnings',
     'production_entries','production_allocations','attendance_entries','inventory_movements',
@@ -1727,16 +1751,6 @@ app.use((err,_req,res,_next) => {
 async function start() {
   const schema=fs.readFileSync(path.join(__dirname,'../db/schema.sql'),'utf8');
   await pool.query(schema);
-  const standardProducts=[
-    [60,40,1.5],[60,40,1.7],[60,40,2],[60,40,2.25],[60,40,2.5],[60,40,3],
-    [60,60,2.5],[60,60,3],[60,80,5],[60,80,6]
-  ];
-  for (const [width,height,length] of standardProducts) {
-    const lengthMm=Math.round(length*1000);
-    await pool.query(`INSERT INTO products(code,section_width_mm,section_height_mm,length_mm)
-      VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING`,
-      [`${width}x${height}-${String(lengthMm)}`,width,height,lengthMm]);
-  }
   await pool.query(`INSERT INTO teams(name) VALUES('Коллектив') ON CONFLICT(name) DO NOTHING`);
   await pool.query("UPDATE teams SET active=false WHERE id <> (SELECT id FROM teams WHERE name='Коллектив' ORDER BY created_at,id LIMIT 1)");
   await ensureAccessProfiles();
