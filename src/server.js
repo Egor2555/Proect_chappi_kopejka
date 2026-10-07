@@ -485,6 +485,16 @@ app.patch('/api/products/:id/archive', auth, roles('admin'), asyncRoute(async (r
     [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
   res.json(after);
 }));
+app.patch('/api/products/:id/restore', auth, roles('admin'), asyncRoute(async (req,res) => {
+  const before=(await pool.query('SELECT * FROM products WHERE id=$1',[req.params.id])).rows[0];
+  if(!before) return res.status(404).json({error:'Типоразмер не найден'});
+  if(before.active) return res.json(before);
+  const after=(await pool.query('UPDATE products SET active=true,archived_at=NULL WHERE id=$1 RETURNING *',[req.params.id])).rows[0];
+  await pool.query("INSERT INTO audit_log(actor_user_id,action,entity_type,entity_id,before_data,after_data) VALUES($1,'restore','product',$2,$3,$4)",
+    [req.user.sub,after.id,JSON.stringify(before),JSON.stringify(after)]);
+  res.json(after);
+}));
+
 
 app.get('/api/workers', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT w.id,w.display_name,w.active,w.is_brigadier,t.name AS team_name
