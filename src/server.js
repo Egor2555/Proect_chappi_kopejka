@@ -460,8 +460,8 @@ app.post('/api/products', auth, roles('admin'), asyncRoute(async (req,res) => {
   const width=Number(sectionWidthMm);
   const height=Number(sectionHeightMm);
   const lengthMm=Number.isFinite(lengthMeters)&&lengthMeters>0?Math.round(lengthMeters*1000):null;
-  if(!label || !Number.isInteger(lengthMm) || lengthMm<=0 || !Number.isInteger(width) || width<=0 || !Number.isInteger(height) || height<=0)
-    return res.status(400).json({error:'Укажите длину, особенность и размеры сечения'});
+  if(!Number.isInteger(lengthMm) || lengthMm<=0 || !Number.isInteger(width) || width<=0 || !Number.isInteger(height) || height<=0)
+    return res.status(400).json({error:'Укажите длину и размеры сечения'});
   const normalizedLabel=label.toLowerCase();
   const duplicate=(await pool.query(
     `SELECT id,active FROM products
