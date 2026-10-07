@@ -132,7 +132,7 @@ async function loadBase(){[state.products,state.teams,state.workers,state.orders
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';const s=Number(n.toFixed(3)).toString().replace('.',',');return s+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}
 function normalizeLengthLabel(v){const s=String(v??'').trim();if(!s)return '';const m=s.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(?:метр(?:а|ов)?|м)?$/i);if(m){const n=Number(String(m[1]).replace(',','.'));if(Number.isFinite(n)){const num=n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'').replace('.',',');return num+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}}return s.replace(/\s+/g,' ').trim()}
-function formatProductLength(p){return escapeHtml(normalizeLengthLabel(p?.length_label)||formatLength(p?.length_m))}
+function productFeature(p){const raw=String(p?.length_label??'').trim();if(!raw)return '';const normalized=normalizeLengthLabel(raw);const meters=Number(p?.length_m);if(Number.isFinite(meters)&&normalized===formatLength(meters))return '';return raw.replace(/\s+/g,' ').trim()}function productLabel(p){const length=formatLength(p?.length_m);const feature=productFeature(p);return feature&&length?length+' · '+feature:(feature||length)}function formatProductLength(p){return escapeHtml(productLabel(p))}
 function productOptions(){return state.products.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+formatProductLength(p)+' · '+p.section_width_mm+'×'+p.section_height_mm+'</option>').join('')}
 function teamName(){return 'Коллектив'}
 function singleTeamId(){return state.teams[0]?.id||''}
@@ -415,7 +415,7 @@ async function production(target='#production'){
 }
 
 function formatProduct(p){return escapeHtml((p.section_width_mm||60)+'×'+(p.section_height_mm||40)+' '+(normalizeLengthLabel(p.length_label)||formatMeters(p.length_m)));}
-async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m))})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
+async function stock(){const rows=await api('/stock');$('#stock').innerHTML='<h1>Склад</h1><div class="card"><p class="muted">Остатки рассчитываются по журналу движений. Производство, отгрузка и оплата — разные события.</p>'+simpleTable(rows.map(x=>({...x,size:(x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+productLabel(x)})),[['size','Типоразмер'],['quantity','Остаток']])+'</div>'}
 async function shipments(){
  const rows=await api('/shipments');
  const canShip=state.user.role==='brigadier';
@@ -427,7 +427,7 @@ async function shipments(){
    for(const item of (shipment.items||[])){
      const productId=String(item.product_id||item.productId||'');
      if(!productId) continue;
-     const current=shippedTotals.get(productId)||{productId,quantity:0,label:(item.section_width_mm||'')+'×'+(item.section_height_mm||'')+' · '+(normalizeLengthLabel(item.length_label)||formatMeters(item.length_m))};
+     const current=shippedTotals.get(productId)||{productId,quantity:0,label:(item.section_width_mm||'')+'×'+(item.section_height_mm||'')+' · '+productLabel(item)};
      current.quantity+=Number(item.quantity||0);
      shippedTotals.set(productId,current);
    }
@@ -437,7 +437,7 @@ async function shipments(){
  const shippedWindow=shippedRows.length
    ? '<div class="shipment-total-rows">'+shippedRows.map(x=>'<div class="shipment-total-row"><span>'+escapeHtml(x.label)+'</span><strong>'+Number(x.quantity||0)+' шт.</strong></div>').join('')+'</div><p><strong>Всего:</strong> '+shippedTotal+' шт.</p>'
    : '<div class="empty">В текущем месяце отправок ещё нет.</div>';
- const history=rows.map(x=>'<div class="shipment-history-entry"><h3>'+escapeHtml(x.items?.[0]?.order_number||'Со склада')+'</h3><p class="shipment-history-date">'+formatDateDMY(x.shipped_at)+'</p><div class="shipment-history-items">'+(x.items||[]).map(i=>'<div class="shipment-history-item"><span>'+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+(normalizeLengthLabel(i.length_label)||formatMeters(i.length_m))+'</span><strong>'+Number(i.quantity||0)+' шт.</strong></div>').join('')+'</div></div>').join('');
+ const history=rows.map(x=>'<div class="shipment-history-entry"><h3>'+escapeHtml(x.items?.[0]?.order_number||'Со склада')+'</h3><p class="shipment-history-date">'+formatDateDMY(x.shipped_at)+'</p><div class="shipment-history-items">'+(x.items||[]).map(i=>'<div class="shipment-history-item"><span>'+(i.section_width_mm||'')+'×'+(i.section_height_mm||'')+' · '+productLabel(i)+'</span><strong>'+Number(i.quantity||0)+' шт.</strong></div>').join('')+'</div></div>').join('');
  $('#shipments').innerHTML='<h1>Отправки</h1>'+
    (canShip?'<div class="card"><h2>Новая отправка</h2><form id="shipmentForm"><div id="shipmentItems"><p class="muted">Загрузка доступной продукции…</p></div><button type="submit">Зафиксировать отправку</button></form></div>':'')+
 
@@ -545,7 +545,7 @@ async function people(){
  const load=async()=>{
    const m=new FormData(form).get('month'); const r=await api('/reports/monthly?month='+encodeURIComponent(m));
    const missing=r.missingRates||[];
-   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m))),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
+   const rows=r.items.map(x=>({...x,size:((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+productLabel(x)),rate:x.rate_minor===null?'—':money(x.rate_minor),total:x.total_minor===null?'—':money(x.total_minor)}));
    const financeVisible=state.user.role!=='worker';
    let html='<h2>Отгружено и подлежит оплате за '+escapeHtml(m)+'</h2>';
    html+=financeVisible
@@ -614,7 +614,7 @@ async function products(){
      rows.map(p=>'<tr><td><strong>'+formatProductLength(p)+'</strong></td><td><span class="'+(p.active?'product-status-active':'product-status-archived')+'">'+(p.active?'Активен':'Архив')+'</span></td><td class="product-delete-cell">'+(p.active?'<button type="button" class="product-delete" data-id="'+p.id+'"><span class="product-trash" aria-hidden="true">🗑</span><span>Удалить</span></button>':'')+'</td></tr>').join('')+
      '</tbody></table></div></div>';
  }).join('');
- $('#products').innerHTML='<h1>Типоразмеры</h1><div class="card product-directory"><h2>Справочник типоразмеров</h2><p class="muted">Типоразмеры сгруппированы по сечению.</p>'+sectionCards+'</div><div class="card"><h2>Добавить типоразмер</h2><form id="productForm"><div class="product-add-row"><label>Сечение<select name="section"><option value="60×40">60 × 40 мм</option><option value="60×60">60 × 60 мм</option><option value="60×80">60 × 80 мм</option></select></label><label>Длина<input name="lengthM" type="number" min="0.001" step="0.001" required placeholder="2,5"></label></div><label>Обозначение<input name="lengthLabel" required placeholder="Например 2,5 метра"></label><button>Добавить</button></form></div>';
+ $('#products').innerHTML='<h1>Типоразмеры</h1><div class="card product-directory"><h2>Справочник типоразмеров</h2><p class="muted">Типоразмеры сгруппированы по сечению.</p>'+sectionCards+'</div><div class="card"><h2>Добавить типоразмер</h2><form id="productForm"><div class="product-add-row"><label>Сечение<select name="section"><option value="60×40">60 × 40 мм</option><option value="60×60">60 × 60 мм</option><option value="60×80">60 × 80 мм</option></select></label><label>Длина<input name="lengthM" type="number" min="0.001" step="0.001" required placeholder="2,5"></label></div><label>Особенность<input name="lengthLabel" required placeholder="Например 4 клипсы"></label><button>Добавить</button></form></div>';
  const pf=$('#productForm');if(pf)pf.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(pf));const [w,h]=String(d.section||'').split('×');d.sectionWidthMm=w;d.sectionHeightMm=h;delete d.section;try{await api('/products',{method:'POST',body:JSON.stringify(d)});notify('Типоразмер добавлен');await loadBase();products()}catch(err){notify(err.message,'error')}});
  document.querySelectorAll('.product-delete').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить типоразмер? История останется доступной.'))return;try{await api('/products/'+b.dataset.id+'/archive',{method:'PATCH',body:JSON.stringify({})});notify('Типоразмер удалён','success');await loadBase();products()}catch(err){notify(err.message,'error')}})
 }
