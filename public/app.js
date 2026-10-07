@@ -217,10 +217,13 @@ async function orders(){
     }catch(err){notify(err.message,'error')}
   }));
   document.querySelectorAll('.cancelOrder').forEach(b=>b.onclick=async()=>{
-    const reason=prompt('Причина отмены заказа:');
-    if(!reason||!reason.trim())return;
-    try{await api('/orders/'+b.dataset.id+'/cancel',{method:'POST',body:JSON.stringify({reason:reason.trim()})});notify('Заказ отменён','success');await loadBase();await orders()}
-    catch(err){notify(err.message,'error')}
+    try{
+      await api('/orders/'+b.dataset.id+'/cancel',{method:'POST',body:'{}'});
+      await api('/orders/'+b.dataset.id+'/archive',{method:'PATCH',body:'{}'});
+      notify('Заказ удалён','success');
+      await loadBase();
+      await orders();
+    }catch(err){notify(err.message,'error')}
   });
   document.querySelectorAll('.archiveOrder').forEach(b=>b.onclick=async()=>{
     if(!confirm('Перенести заказ в архив?'))return;
@@ -245,7 +248,7 @@ function orderCards(rows,editable=false){
     const priority=state.user.role==='admin'&&editable&&!['closed','archived'].includes(o.status)
       ? '<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button type="submit">Сохранить приоритет</button></form>' : '';
     const cancel=state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)
-      ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Отменить заказ</button>' : '';
+      ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Удалить заказ</button>' : '';
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled','closed'].includes(o.status)
       ? '<button type="button" class="archiveOrder" data-id="'+o.id+'">В архив</button>' : '';
     const status=o.status==='active'?'🟢 В РАБОТЕ':o.status==='queued'?(index===0?'🟡 СЛЕДУЮЩИЙ':''):o.status==='completed'?'✅ ВЫПОЛНЕН':o.status==='closed'?'🔒 ЗАКРЫТ':o.status==='cancelled'?'⛔ ОТМЕНЁН':o.status==='archived'?'📦 АРХИВ':escapeHtml(o.status);
