@@ -1704,7 +1704,7 @@ app.post('/api/admin/clean-test-data', auth, roles('admin'), asyncRoute(async (r
     return res.status(400).json({error:'Для очистки требуется точное подтверждение: ОЧИСТИТЬ ТЕСТОВЫЕ ДАННЫЕ'});
   const result=await tx(async c=>{
     await c.query("SELECT pg_advisory_xact_lock(hashtext('chappi:clean-test-data'))");
-    const bound=(await c.query("SELECT id,username,role,worker_id FROM users WHERE worker_id IS NOT NULL AND active=true")).rows;
+    const bound=(await c.query("SELECT id,username,role,worker_id FROM users WHERE worker_id IS NOT NULL")).rows;
     if(bound.length) throw new Error('Очистка остановлена: к работникам привязаны профили доступа. Сначала отвяжите их от работников.');
     const tables=['shipment_allocations','payment_entries','shipment_items','shipments','production_allocations','inventory_movements','production_entries','attendance_entries','worker_role_history','team_memberships','order_items','orders','daily_production_reports','monthly_worker_earnings','penny_events','monthly_closures','fund_entries','rates','month_states'];
     const before={};
