@@ -182,7 +182,7 @@ app.use(express.json({ limit: '25mb' }));
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Слишком много попыток входа. Попробуйте позже.' } }));
 app.use(express.static(path.join(__dirname, '../public'), {
   setHeaders(res, filePath) {
-    if (filePath.endsWith('index.html')) {
+    if (filePath.endsWith('index.html') || filePath.endsWith('app.css') || filePath.endsWith('app.js')) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
