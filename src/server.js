@@ -1533,20 +1533,8 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
     const attendance=(await c.query(`SELECT a.work_date,a.team_id,COUNT(*)::int worker_count,
       array_agg(json_build_object('workerId',a.worker_id,'name',w.display_name,'isBrigadier',a.was_brigadier) ORDER BY w.display_name) workers
       FROM attendance_entries a JOIN workers w ON w.id=a.worker_id
-      WHERE NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
-        AND EXISTS (
-        SELECT 1
-        FROM shipment_items si
-        JOIN shipments s ON s.id=si.shipment_id
-          AND s.payroll_month >= $1::date
-          AND s.payroll_month < ($1::date + INTERVAL '1 month')
-        JOIN shipment_allocations sa ON sa.shipment_item_id=si.id
-        JOIN inventory_movements im ON im.id=sa.inventory_movement_id
-        JOIN production_entries pe ON pe.id=im.production_entry_id
-          AND pe.voided_at IS NULL
-          AND pe.work_date=a.work_date
-          AND pe.team_id=a.team_id
-      )
+      WHERE a.work_date >= $1::date AND a.work_date < ($1::date + INTERVAL '1 month')
+        AND NOT EXISTS (SELECT 1 FROM worker_role_history h WHERE h.worker_id=a.worker_id AND h.role='brigadier' AND h.valid_from<=a.work_date AND (h.valid_to IS NULL OR h.valid_to>=a.work_date))
       GROUP BY a.work_date,a.team_id ORDER BY a.work_date,a.team_id`,[start])).rows;
     const prodDays=(await c.query(`SELECT pe.work_date,pe.team_id,SUM(sa.quantity)::int quantity,
       SUM((sa.quantity::bigint*r.amount_minor))::text total_minor
@@ -1558,9 +1546,9 @@ app.post('/api/reports/close-month', auth, roles('admin'), asyncRoute(async (req
       JOIN production_entries pe ON pe.id=im.production_entry_id AND pe.voided_at IS NULL
       JOIN rates r ON r.product_id=si.product_id AND r.period_month=$1::date
       GROUP BY pe.work_date,pe.team_id ORDER BY pe.work_date,pe.team_id`,[start])).rows;
-    const attendanceMap=new Map(attendance.map(x=>[String(x.work_date)+'|'+x.team_id,x]));
+    const attendanceMap=new Map(attendance.map(x=>[new Date(x.work_date).toISOString().slice(0,10)+'|'+String(x.team_id),x]));
     const calculationDays=prodDays.map(day=>{
-      const a=attendanceMap.get(String(day.work_date)+'|'+day.team_id);
+      const a=attendanceMap.get(new Date(day.work_date).toISOString().slice(0,10)+'|'+String(day.team_id));
       if(!a || Number(a.worker_count)<1) throw new Error('Нет отмеченных работников: '+String(day.work_date));
       return {
         date:String(day.work_date),
