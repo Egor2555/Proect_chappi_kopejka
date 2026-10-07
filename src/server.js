@@ -1137,7 +1137,7 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
   res.json({orderItems,stockItems});
 }));app.get('/api/shipments', auth, asyncRoute(async (_req,res) => {
   const r=await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object(
-      'order_id',i.order_id,'order_number',o.order_number,
+      'order_id',i.order_id,'product_id',i.product_id,'order_number',o.order_number,
       'section_width_mm',p.section_width_mm,'section_height_mm',p.section_height_mm,
       'length_m',p.length_mm / 1000.0,
       'length_label',COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра'),
