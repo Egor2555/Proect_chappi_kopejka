@@ -559,7 +559,7 @@ async function people(){
      const rateItems=r.items.filter(x=>x.rate_minor===null);
      if(rateItems.length){
        html+='<div class="card monthly-rates-card"><h2>Расценки для закрытия месяца</h2><p class="muted">Введите расценку по каждому типоразмеру.</p><div id="monthlyRates">';
-       html+=rateItems.map(x=>'<div class="monthly-rate-row"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+(normalizeLengthLabel(x.length_label)||formatLength(x.length_m)))+'</strong><input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></div>').join('');
+       html+=rateItems.map(x=>'<div class="monthly-rate-row"><strong>'+escapeHtml((x.section_width_mm||'')+'×'+(x.section_height_mm||'')+' · '+productLabel(x))+'</strong><input class="monthlyRateInput" data-product-id="'+x.product_id+'" type="number" min="0" step="0.01" inputmode="decimal" placeholder="грн/шт"></div>').join('');
        html+='<button type="button" id="saveAllMonthlyRates" class="save-all-monthly-rates">Сохранить расценки</button></div></div>';
      }
    }
