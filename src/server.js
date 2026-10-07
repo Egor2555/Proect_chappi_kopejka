@@ -639,7 +639,12 @@ app.delete('/api/workers/:id/brigadier', auth, roles('admin'), asyncRoute(async 
     if(!w.is_brigadier) throw new Error('Работник не является текущим бригадиром');
     const history=(await c.query("SELECT id,valid_from FROM worker_role_history WHERE worker_id=$1 AND role='brigadier' AND valid_to IS NULL ORDER BY valid_from DESC LIMIT 1 FOR UPDATE",[workerId])).rows[0];
     if(history){
-      if(String(history.valid_from)===effectiveFrom){
+      const historyStart=String(history.valid_from);
+      if(historyStart===effectiveFrom){
+        await c.query('DELETE FROM worker_role_history WHERE id=$1',[history.id]);
+      }else if(historyStart > effectiveFrom){
+        // Defensive repair: an open future-dated history row must not be closed
+        // with valid_to before valid_from (Postgres rejects that invariant).
         await c.query('DELETE FROM worker_role_history WHERE id=$1',[history.id]);
       }else{
         await c.query("UPDATE worker_role_history SET valid_to=($1::date - INTERVAL '1 day')::date WHERE id=$2",[effectiveFrom,history.id]);
