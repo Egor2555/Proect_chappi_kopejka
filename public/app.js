@@ -580,13 +580,19 @@ async function people(){
    const saveAllRates=$('#saveAllMonthlyRates');
    if(saveAllRates)saveAllRates.onclick=async()=>{
      const inputs=[...document.querySelectorAll('.monthlyRateInput')];
-     const values=inputs.map(input=>({input,value:String(input.value??'').trim()}));
+     const values=inputs.map(input=>({
+       productId:String(input.getAttribute('data-product-id')||'').trim(),
+       value:String(input.value??'').trim()
+     }));
+     if(values.some(x=>!x.productId)){
+       notify('Не найден типоразмер для одной из расценок','error');return
+     }
      if(values.some(x=>x.value===''||Number(x.value)<0||!Number.isFinite(Number(x.value)))){
        notify('Введите все расценки','error');return
      }
      saveAllRates.disabled=true;
      try{
-       for(const x of values) await api('/rates',{method:'POST',body:JSON.stringify({productId:x.input.dataset.productId,periodMonth:m+'-01',amountMinor:Math.round(Number(x.value)*100)})});
+       for(const x of values) await api('/rates',{method:'POST',body:JSON.stringify({productId:x.productId,periodMonth:m+'-01',amountMinor:Math.round(Number(x.value)*100)})});
        notify('Все расценки сохранены','success');await load()
      }catch(e){notify(e.message,'error')}finally{saveAllRates.disabled=false}
    };
