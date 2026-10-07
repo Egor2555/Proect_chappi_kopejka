@@ -171,8 +171,11 @@ button{
 /* Chappi Edition: restore action — quiet green iOS text button. */
 .product-restore{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-height:40px;padding:7px 4px;background:transparent!important;color:var(--green)!important;font-weight:600!important;box-shadow:none!important}.product-restore:active{transform:scale(.98)}
 
-/* Chappi Edition: compact monthly closing rates card. */
+/* Chappi Edition: simple monthly closing rates card. */
 .monthly-rates-card{max-width:680px}
-.monthly-rates-card #monthlyRates{display:flex;flex-direction:column;gap:8px}
-.monthly-rates-card #monthlyRates>.card{margin:0;padding:12px 14px;box-shadow:none;border:1px solid #e5e5ea}
-@media(max-width:720px){.monthly-rates-card{max-width:none}}
+.monthly-rates-card #monthlyRates{display:flex;flex-direction:column;gap:0}
+.monthly-rates-card .monthly-rate-row{display:grid;grid-template-columns:minmax(0,1fr) 130px;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid #f0f0f2}
+.monthly-rates-card .monthly-rate-row strong{min-width:0}
+.monthly-rates-card .monthly-rate-row input{width:100%;box-sizing:border-box}
+.monthly-rates-card .save-all-monthly-rates{margin-top:14px;width:100%}
+@media(max-width:720px){.monthly-rates-card{max-width:none}.monthly-rates-card .monthly-rate-row{grid-template-columns:minmax(0,1fr) 120px}}
