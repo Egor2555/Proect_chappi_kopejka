@@ -1,161 +1,101 @@
-:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",sans-serif;color:#1c1c1e;background:#f2f2f7;font-size:16px;--text:#1c1c1e;--blue:#5f7894;--line:#d1d1d6;--muted:#6e6e73;--green:#34c759;--green-bg:#f2fbf4;--yellow:#ffcc00;--yellow-bg:#fffbea;--red:#ff3b30;--card:#fff}
-*{box-sizing:border-box}body{margin:0;background:var(--background,#f2f2f7);-webkit-font-smoothing:antialiased}.topbar{background:rgba(255,255,255,.94);color:var(--text);padding:12px max(18px,calc((100vw - 1100px)/2));display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid rgba(60,60,67,.18);position:sticky;top:0;z-index:30;backdrop-filter:saturate(180%) blur(20px)}.topbar strong{display:block;font-size:19px;letter-spacing:.01em}.topbar small{display:block;color:var(--muted)}.topbar #userBadge{font-size:14px;color:var(--muted)}
-main{max-width:1100px;margin:18px auto;padding:0 16px}.panel,.card{background:var(--card);border:0;border-radius:14px;padding:17px;margin:0 0 14px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.035)}.login{max-width:440px;margin:9vh auto}h1{font-size:26px;line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}h2{font-size:20px;line-height:1.2;margin:0 0 14px;letter-spacing:-.01em}h3{font-size:17px;margin:0 0 10px}.muted,small{color:var(--muted)}label{display:block;font-weight:600;margin:12px 0}input,select,textarea{display:block;width:100%;font:inherit;padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-top:6px;background:#fff;color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(95,120,148,.16)}button{font:inherit;font-weight:650;border:0;border-radius:11px;background:var(--blue);color:white;padding:11px 16px;min-height:44px;cursor:pointer;transition:transform .05s,opacity .15s,background .15s}button:active{transform:scale(.985)}button:disabled{opacity:.5;cursor:not-allowed}form button{width:100%;margin-top:10px}.tabs{display:flex;gap:7px;overflow-x:auto;padding:4px 0 16px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tabs button{white-space:nowrap;background:#e5e5ea;color:var(--text);min-height:40px;padding:9px 14px;border-radius:11px;font-weight:600}.tabs button.active{background:#1c1c1e;color:#fff}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.stat{font-size:25px;font-weight:800}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.row button{flex:0 0 auto}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:520px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #e5e5ea}th{color:var(--muted);font-size:14px}.order-active{border:2px solid #31a354;background:var(--green-bg)}.order-next{border:2px solid #d6ad22;background:var(--yellow-bg)}.tag{display:inline-block;border-radius:20px;background:#e5e5ea;padding:4px 9px;font-size:13px}.tag.green{background:#e7f7eb;color:#248a3d}.error{color:#d70015}.success{color:#248a3d}.notice{padding:12px;border-radius:12px;margin:10px 0;background:#e5f2ff;color:#075fa8}.empty{padding:18px;color:var(--muted);text-align:center}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{min-width:130px}.hidden{display:none!important}
-.secondary{background:#e5e5ea!important;color:var(--text)!important}.top-actions{flex:0 0 auto;align-items:center}.top-actions button{min-height:40px;padding:8px 14px;background:#e5e5ea;color:var(--text)}
-.profile-choice{display:flex;gap:0;margin-bottom:16px}.profile-choice button{flex:1;border-radius:0}.profile-choice button:first-child{border-radius:11px 0 0 11px}.profile-choice button:last-child{border-radius:0 11px 11px 0}.profile-choice button.active{background:#1c1c1e;color:#fff;box-shadow:none}
-.worker-list{display:block;margin:12px 0}.worker-list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:11px 0;border-bottom:1px solid #e5e5ea}.worker-list-row:last-child{border-bottom:0}.worker-role-status{font-size:.88rem;font-weight:500;color:var(--muted)}.worker-actions{position:relative;flex:0 0 auto}.worker-menu{min-height:40px;width:44px;padding:4px 10px;background:#e5e5ea;color:var(--text);font-size:24px;line-height:1}.worker-context-menu{position:absolute;right:0;top:46px;z-index:20;min-width:250px;background:#fff;border:1px solid #d1d1d6;border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px}.worker-context-menu[hidden]{display:none}.worker-action{display:block;width:100%;min-height:44px;background:#fff;color:var(--text);text-align:left;padding:10px 12px;border-radius:9px}.worker-action:hover{background:#f2f2f7}.worker-dismiss{color:var(--red)}
-.order-table{margin-top:14px;border:1px solid #e5e5ea;border-radius:12px;overflow:hidden}.order-table-head,.order-item-row{display:grid;grid-template-columns:minmax(170px,1.8fr) repeat(3,minmax(70px,.8fr));align-items:center}.order-table-head{background:#f2f2f7;font-weight:650;font-size:.86rem;color:#6e6e73;padding:10px 12px}.order-item-row{padding:12px;border-top:1px solid #e5e5ea}.order-size{font-size:1rem}.order-num{display:flex;flex-direction:column;gap:3px;text-align:center}.order-num span{font-size:.75rem;color:#6e6e73}.order-num strong{font-size:1.05rem}
-/* Chappi Edition: order actions follow iOS-style hierarchy. */.activateOrder{background:var(--green)!important;color:#fff!important;margin-top:14px;width:100%;font-weight:700}.cancelOrder{display:block!important;width:auto!important;min-height:42px!important;margin:6px auto 0!important;padding:8px 12px!important;background:transparent!important;color:var(--red)!important;font-weight:600!important}.archiveOrder{margin-top:12px}.priorityForm{margin-top:12px;padding-top:12px;border-top:1px solid #e5e5ea}.priorityForm button{background:#e5e5ea;color:var(--text)}
-@media(max-width:650px){.order-table-head,.order-item-row{grid-template-columns:minmax(125px,1.5fr) repeat(3,minmax(55px,.7fr));font-size:.88rem}.order-table-head{font-size:.72rem}.order-size{font-size:.9rem}.order-num strong{font-size:.95rem}}
-@media(max-width:600px){:root{font-size:16px}main{margin:12px auto;padding:0 10px}.panel,.card{padding:16px;border-radius:15px}.topbar{padding:12px 14px}.topbar strong{font-size:17px}.tabs button{padding:10px 14px}.row>*{min-width:100%}.top-actions{min-width:auto!important}.top-actions button{min-width:auto}}
-.checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:12px 0}.checklist label{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e5e5ea;border-radius:11px;margin:0}.checklist input{width:22px;height:22px;margin:0}.check-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #e5e5ea}.check-row input{width:22px;height:22px;margin:0}
-
-/* Chappi Edition: monthly close readiness, calm iOS-style actions. */
-.close-month-ready{background:var(--green)!important;color:#fff!important;width:100%;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.close-month-not-ready{background:var(--red)!important;color:#fff!important;width:100%;font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.ios-info-panel{background:#fff;border:1px solid #d1d1d6;border-radius:14px;padding:16px 18px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,.08);color:var(--text)}
-.ios-info-panel strong{display:block;font-size:17px;margin-bottom:6px}.ios-info-panel p{margin:6px 0;color:var(--muted);line-height:1.4}.ios-info-panel p:last-child{color:var(--text);font-weight:600}
-
-/* Chappi Edition: daily production status card */
-.daily-production-card{background:var(--card);border-radius:14px;padding:17px;margin:0 0 14px;border:2px solid transparent;box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.035)}
-.daily-production-card.ready{border-color:var(--green);background:var(--green-bg)}
-.daily-production-card.missing{border-color:var(--red);background:#fff5f4}
-.daily-production-card.day-off{border-color:#c7c7cc;background:#f7f7f8}
-.daily-production-card.in-work{border-color:var(--green);background:var(--green-bg)}
-.daily-production-card h2{margin-bottom:4px}.daily-date{margin:0 0 14px;color:var(--muted)}
-.daily-rows{display:grid;gap:0}.daily-row{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid rgba(60,60,67,.12)}.daily-row:last-child{border-bottom:0}
-.daily-empty{min-height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;color:var(--muted)}.daily-empty strong{color:var(--text);font-size:18px}.daily-workers{margin-top:14px;padding-top:12px;border-top:1px solid rgba(60,60,67,.12);color:var(--muted)}.daily-workers span{font-weight:650;color:var(--text)}
-
-/* Chappi Edition: worker open-access login action */
-.login form button[type="submit"].open-access{background:var(--green);color:#fff}
-
-
-/* Chappi Edition: brigadier daily report — one calm iOS-style card, no order highlighting. */
-.daily-report-window{padding:18px;margin-bottom:14px}
-.daily-report-head{display:flex;align-items:flex-start;justify-content:space-between}
-.daily-report-head h2{margin:0 0 5px}
-.daily-report-date{margin:0;color:var(--muted)}
-.daily-report-section{padding:15px 0;border-top:1px solid #e5e5ea}
-.daily-report-section:first-of-type{margin-top:16px}
-.daily-report-section h3{margin:0 0 12px;font-size:18px}
-.daily-report-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px}
-.daily-report-actions button{flex:0 0 auto;min-width:190px}
-.daily-dayoff{background:#d64545!important;border-color:#d64545!important;color:#fff!important}
-.daily-save{background:#3a9b68!important;border-color:#3a9b68!important;color:#fff!important}
-.daily-report-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
-.daily-report-section-title h3{margin:0}
-.daily-report-section-title button{min-height:42px;padding:9px 13px}
-.daily-report-workers{display:flex;flex-direction:column;gap:2px}
-.daily-report-worker{display:flex;align-items:center;gap:8px;padding:4px 0;margin:0;border:0;border-radius:0;font-weight:400;font-size:15px;background:transparent;min-height:30px}
-.daily-report-worker input{appearance:none;-webkit-appearance:none;width:18px;height:18px;margin:0;flex:0 0 auto;border:2px solid #c7c7cc;border-radius:50%;background:#fff;position:relative;cursor:pointer;transition:background .15s ease,border-color .15s ease,transform .12s ease}.daily-report-worker input:checked{background:#34c759;border-color:#34c759}.daily-report-worker input:checked::after{content:"";position:absolute;inset:4px;border-radius:50%;background:#fff}.daily-report-worker input:active{transform:scale(.94)}.daily-report-select-all{margin-top:10px;padding-top:12px;border-top:1px solid var(--line)}
-.daily-report-products{display:grid;gap:8px}
-.daily-report-product{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #e5e5ea}
-.daily-report-product:last-child{border-bottom:0}
-.daily-report-product span{font-weight:600}
-.daily-report-product input,.daily-report-product select{margin:0}
-.daily-extra-row{grid-template-columns:minmax(0,1fr) 150px auto}
-.daily-extra-row button{min-height:46px}
-.daily-report-summary{margin:0 0 16px}
-.daily-report-summary>div{padding:14px 0;border-top:1px solid #e5e5ea;line-height:1.55}
-.daily-report-summary strong{display:block;font-size:18px;margin-bottom:5px}
-.daily-report-summary span{display:block;color:var(--muted)}
-.daily-report-summary button{margin-top:12px}
+/* Chappi Edition: medium-size visual tuning only. */
+:root{font-size:16px}
+h1{font-size:24px;margin-bottom:12px}
+h2{font-size:19px;margin-bottom:11px}
+h3{font-size:16px;margin-bottom:9px}
+.topbar{padding-top:10px;padding-bottom:10px}
+.topbar strong{font-size:18px}
+.topbar #userBadge{font-size:13px}
+main{margin-top:16px;margin-bottom:16px}
+.panel,.card{padding:15px;margin-bottom:12px;border-radius:13px}
+input,select,textarea{font-size:15px;padding:10px 12px;border-radius:9px}
+button{font-size:15px;min-height:42px;padding:10px 14px;border-radius:10px}
+.tabs{gap:6px;padding-bottom:12px}
+.tabs button{min-height:38px;padding:8px 12px;border-radius:10px;font-size:15px}
+.grid{gap:9px}
+.stat{font-size:23px}
+.row{gap:10px}
+.table-wrap table{min-width:500px}
+th,td{padding:9px 11px}
+th{font-size:13px}
+.notice{padding:10px;border-radius:10px;margin:8px 0}
+.empty{padding:15px}
+.actions{gap:6px}
+.actions button{min-width:115px}
+.tag{padding:3px 8px;font-size:12px}
+.worker-list-row{padding:9px 0}
+.worker-role-status{font-size:13px}
+.worker-menu{min-height:38px;width:42px;font-size:22px}
+.worker-context-menu{min-width:230px;border-radius:11px}
+.worker-action{min-height:40px;padding:9px 11px}
+.order-table{margin-top:12px;border-radius:11px}
+.order-table-head{padding:9px 11px;font-size:13px}
+.order-item-row{padding:10px 11px}
+.order-size{font-size:15px}
+.order-num strong{font-size:16px}
+.order-num span{font-size:12px}
+.activateOrder{margin-top:12px}
+.cancelOrder{min-height:40px!important;margin-top:5px!important;padding:7px 11px!important}
+.priorityForm{margin-top:10px;padding-top:10px}
+.checklist{gap:7px;margin:10px 0}
+.checklist label{padding:9px;gap:8px}
+.check-row{gap:8px;padding:9px 0}
+.ios-info-panel{padding:14px 16px;margin:10px 0;border-radius:12px}
+.ios-info-panel strong{font-size:16px;margin-bottom:5px}
+.ios-info-panel p{font-size:14px;line-height:1.35}
+.daily-production-card{padding:15px;margin-bottom:12px;border-radius:13px}
+.daily-production-card h2{margin-bottom:3px}
+.daily-date{margin-bottom:11px;font-size:14px}
+.daily-row{padding:8px 0;gap:12px}
+.daily-empty{min-height:72px}
+.daily-empty strong{font-size:16px}
+.daily-workers{margin-top:11px;padding-top:10px}
+.daily-report-window{padding:15px;margin-bottom:12px}
+.daily-report-section{padding:12px 0}
+.daily-report-section:first-of-type{margin-top:13px}
+.daily-report-section h3{margin-bottom:9px;font-size:16px}
+.daily-report-section-title{margin-bottom:9px}
+.daily-report-section-title button{min-height:40px;padding:8px 12px}
+.daily-report-actions{margin-top:14px;gap:8px}
+.daily-report-actions button{min-width:170px}
+.daily-report-product{grid-template-columns:minmax(0,1fr) 135px;gap:8px;padding:8px 0}
+.daily-extra-row{grid-template-columns:minmax(0,1fr) 135px auto}
+.daily-extra-row button{min-height:42px}
+.daily-report-summary{margin-bottom:13px}
+.daily-report-summary>div{padding:12px 0}
+.daily-report-summary strong{font-size:16px;margin-bottom:4px}
+.daily-report-worker{font-size:14px;min-height:28px}
+.shipment-order-label{font-size:14px;margin-bottom:7px}
+.shipment-order-option{min-height:42px}
+.shipment-order-text{font-size:15px;gap:6px}
+.shipment-source-section{margin:12px 0 15px;padding-top:10px}
+.shipment-source-section h3{font-size:15px;margin-bottom:8px}
+.product-section-card{margin:12px 0;border-radius:12px}
+.product-section-title{padding:10px 12px}
+.product-section-title h2{font-size:17px}
+.product-table th,.product-table td{padding:9px 10px}
+.product-delete{min-height:38px;padding:6px 3px}
+.product-trash{font-size:16px}
+.product-add-row{gap:10px}
+.product-add-form label{margin:7px 0}
+.product-add-form>button{margin-top:8px}
+.admin-access .card{padding:11px 13px;margin-bottom:7px}
+.admin-access .card h3{font-size:15px}
+.admin-access .card p{font-size:13px}
+.admin-access .pinForm input,.admin-access .pinForm button{min-height:42px;padding:9px 12px}
+.admin-columns{gap:14px}
+.admin-backup-actions{gap:14px}
+.admin-system{padding:11px 14px;gap:12px}
+.admin-system button{min-height:42px;padding:9px 15px}
 @media(max-width:600px){
-  .daily-report-window{padding:18px}
-  .daily-report-section-title{align-items:flex-start;flex-direction:column}
-  .daily-report-section-title button{width:100%}
-  .daily-report-product{grid-template-columns:minmax(0,1fr) 125px}
-  .daily-extra-row{grid-template-columns:minmax(0,1fr) 125px}
-  .daily-report-actions{gap:8px}
+  main{margin-top:10px;padding-left:10px;padding-right:10px}
+  .panel,.card{padding:14px;border-radius:12px}
+  .topbar{padding:10px 14px}
+  .topbar strong{font-size:17px}
+  .tabs button{padding:8px 11px}
+  .row>*{min-width:100%}
+  .daily-report-window{padding:14px}
+  .daily-report-product{grid-template-columns:minmax(0,1fr) 120px}
+  .daily-extra-row{grid-template-columns:minmax(0,1fr) 120px}
   .daily-report-actions button{min-width:0;flex:1}
-  .daily-extra-row button{grid-column:1/-1;width:100%}
-}
-
-/* Chappi-style shipment order choice */
-.shipment-order-list{display:flex;flex-direction:column;gap:2px;margin-bottom:16px}
-.shipment-order-label{font-size:15px;font-weight:600;margin-bottom:8px;color:var(--muted)}
-.shipment-order-option{display:flex;align-items:center;gap:10px;min-height:46px;padding:5px 2px;border:0;border-bottom:1px solid #e5e5ea;background:transparent;cursor:pointer;margin:0}
-.shipment-order-option:last-child{border-bottom:0}
-.shipment-order-option input{position:absolute;opacity:0;pointer-events:none}
-.shipment-order-dot{width:20px;height:20px;flex:0 0 20px;border:2px solid #c7c7cc;border-radius:50%;background:#fff;position:relative;transition:background .15s ease,border-color .15s ease,transform .12s ease}
-.shipment-order-option input:checked + .shipment-order-dot{background:var(--blue);border-color:var(--blue)}
-.shipment-order-option input:checked + .shipment-order-dot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}
-.shipment-order-option:active .shipment-order-dot{transform:scale(.94)}
-.shipment-order-text{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:16px}
-.shipment-order-text strong{font-weight:600;white-space:nowrap}
-.shipment-order-text span{color:var(--text);overflow:hidden;text-overflow:ellipsis}
-
-.shipment-source-section{margin:14px 0 18px;padding-top:12px;border-top:1px solid #e5e5ea}.shipment-source-section:first-child{border-top:0;padding-top:0}.shipment-source-section h3{margin:0 0 10px;font-size:16px}.shipment-warehouse-section{margin-top:20px}.shipment-order-option input{position:absolute;opacity:0;pointer-events:none}.shipment-order-option input:checked + .shipment-order-dot{background:var(--blue);border-color:var(--blue)}.shipment-order-option input:checked + .shipment-order-dot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}.shipment-order-option:active .shipment-order-dot{transform:scale(.94)}
-
-/* Chappi Edition: compact admin layout */
-.admin-access .card{margin:0 0 8px;padding:12px 14px;box-shadow:none;border:1px solid var(--line)}
-.admin-access .card h3{font-size:16px;margin:0}
-.admin-access .card p{margin:4px 0;font-size:14px}
-.admin-access .pinForm{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:8px;align-items:end;margin-top:8px}
-.admin-access .pinForm label{margin:0}.admin-access .pinForm input{margin-top:4px;padding:10px 12px;min-height:44px}.admin-access .pinForm button{min-height:44px;padding:10px 14px;margin:0}
-.admin-columns{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
-.admin-section{margin:0}.admin-backup-actions{display:grid;grid-template-columns:1fr 1fr;gap:16px}.admin-backup-actions h3{margin-bottom:6px}.admin-backup-actions p{margin:0 0 10px}.admin-backup-actions form{margin:0}.admin-backup-actions form button{margin-top:8px}
-.admin-log details{border-top:1px solid var(--line);padding:12px 0}.admin-log details:first-child{border-top:0;padding-top:0}.admin-log summary{cursor:pointer;font-weight:700}.admin-log .table-wrap{margin-top:12px}
-.admin-system{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px}.admin-system button{min-height:44px;padding:10px 18px}
-@media(max-width:800px){.admin-columns{grid-template-columns:1fr}.admin-backup-actions{grid-template-columns:1fr}.admin-access .pinForm{grid-template-columns:1fr 1fr}.admin-access .pinForm label{grid-column:1/-1}}
-
-/* Chappi Edition: product directory — grouped tables, iOS-style destructive action. */
-.product-directory{padding-bottom:8px}.product-section-card{border:1px solid #e5e5ea;border-radius:14px;overflow:hidden;margin:14px 0;background:#fff}.product-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f2f2f7}.product-section-title h2{margin:0;font-size:19px}.product-table-wrap{overflow-x:auto}.product-table{width:100%;min-width:520px;border-collapse:collapse}.product-table th,.product-table td{padding:10px 12px;border-bottom:1px solid #e5e5ea;text-align:left}.product-table th{font-size:13px;color:var(--muted);font-weight:600;background:#fff}.product-table tr:last-child td{border-bottom:0}.product-status-active{color:#248a3d;font-weight:600}.product-status-archived{color:var(--muted);font-weight:500}.product-delete-cell{text-align:right!important;width:150px}.product-delete{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-height:40px;padding:7px 4px;background:transparent!important;color:var(--red)!important;font-weight:600!important}.product-delete:active{transform:scale(.98)}.product-trash{font-size:17px;line-height:1}.product-directory>.muted{margin-top:-6px}@media(max-width:600px){.product-section-card{border-radius:12px}.product-table{min-width:440px}.product-table th,.product-table td{padding:11px 10px}.product-delete-cell{width:120px}}
-
-.product-add-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.product-add-form label{margin:8px 0}.product-add-form>button{width:100%;margin-top:10px}@media(max-width:600px){.product-add-row{gap:8px}}
-
-/* Chappi Edition: unified medium iOS scale — readable, compact, tablet-first. */
-button,input,select,textarea{font-size:16px}
-.card h2{margin-bottom:11px}
-.actions{gap:7px}
-.actions button{min-width:120px}
-
-
-/* Chappi Edition: final unified iOS visual layer. */
-:root{
-  --surface:#ffffff;
-  --surface-secondary:#f2f2f7;
-  --separator:#d6d6da;
-  --blue-soft:#e9eef4;
-}
-body{
-  background:#f2f2f7;
-}
-.topbar{
-  min-height:58px;
-  box-shadow:0 1px 2px rgba(0,0,0,.03);
-}
-.panel,.card{
-  border:1px solid rgba(60,60,67,.08);
-  box-shadow:0 1px 2px rgba(0,0,0,.035),0 5px 16px rgba(0,0,0,.025);
-}
-input,select,textarea{
-  background:#f7f7f9;
-  border-color:#d6d6da;
-}
-input:focus,select:focus,textarea:focus{
-  background:#fff;
-}
-button{
-  box-shadow:0 1px 2px rgba(0,0,0,.06);
-}
-.secondary,
-.tabs button{
-  box-shadow:none;
-}
-.tabs button.active{
-  box-shadow:0 1px 2px rgba(0,0,0,.08);
-}
-.notice{
-  border:1px solid rgba(0,95,170,.10);
-}
-.order-active,.order-next{
-  box-shadow:0 1px 2px rgba(0,0,0,.03);
-}
-.product-section-card{
-  border-color:rgba(60,60,67,.12);
-  box-shadow:0 1px 2px rgba(0,0,0,.025);
-}
-.product-section-title{
-  background:#f2f2f7;
 }
