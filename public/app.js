@@ -246,7 +246,7 @@ function orderCards(rows,editable=false){
     const activate=state.user.role==='admin'&&editable&&o.status==='queued'
       ? '<button type="button" class="activateOrder" data-id="'+o.id+'">Сделать активным</button>' : '';
     const priority=state.user.role==='admin'&&editable&&!['closed','archived'].includes(o.status)
-      ? '<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<input name="priority" type="number" min="0" value="'+o.priority+'"></label><button type="submit">Сохранить приоритет</button></form>' : '';
+      ? '<form class="priorityForm row" data-id="'+o.id+'"><label>Приоритет<select name="priority"><option value="0" '+(Number(o.priority)===0?'selected':'')+'>Без приоритета</option><option value="1" '+(Number(o.priority)===1?'selected':'')+'>1 — первый</option><option value="2" '+(Number(o.priority)===2?'selected':'')+'>2 — второй</option><option value="3" '+(Number(o.priority)===3?'selected':'')+'>3 — третий</option><option value="4" '+(Number(o.priority)===4?'selected':'')+'>4 — четвёртый</option><option value="5" '+(Number(o.priority)===5?'selected':'')+'>5 — пятый</option></select></label><button type="submit">Сохранить приоритет</button></form>' : '';
     const cancel=state.user.role==='admin'&&editable&&['queued','active'].includes(o.status)
       ? '<button type="button" class="cancelOrder" data-id="'+o.id+'">Удалить заказ</button>' : '';
     const archive=state.user.role==='admin'&&editable&&['completed','cancelled','closed'].includes(o.status)
