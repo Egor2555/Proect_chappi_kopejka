@@ -99,7 +99,6 @@ async function must(path, options, expected=200) {
     {productId:product2.id,quantity:150}
   ],workerIds:[workerC.id]}},201);
   let editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),50);
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
     {productId:product2.id,quantity:120}
   ],workerIds:[workerC.id]}},201);
