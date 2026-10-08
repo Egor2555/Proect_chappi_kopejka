@@ -254,7 +254,8 @@ async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
   const values = columns.map(column => jsonbColumns.has(column)
     ? (mapped[column] == null ? null : (typeof mapped[column] === 'string' ? mapped[column] : JSON.stringify(mapped[column])))
     : mapped[column]);
-  const placeholders = columns.map((column, i) => '
+  const placeholders = columns.map((column, i) => '$' + (i + 1) + (jsonbColumns.has(column) ? '::jsonb' : '')).join(',');
+  let sql = 'INSERT INTO ' + table + '(' + columns.join(',') + ') VALUES(' + placeholders + ')';
   if (upsert) {
     const updates = columns.filter(column => column !== 'id').map(column => column + '=EXCLUDED.' + column);
     if (updates.length) sql += ' ON CONFLICT(id) DO UPDATE SET ' + updates.join(',');
