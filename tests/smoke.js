@@ -91,21 +91,24 @@ async function must(path, options, expected=200) {
 
   // Critical regression: repeated edit of an unshipped daily report must
   // release the old reservation and expose the released units as free stock.
+  const editOrder=await must('/api/orders',{token:admin,method:'POST',body:{
+    orderNumber:'CI-EDIT',title:'CI edit reservation',priority:3,
+    items:[{productId:product2.id,requiredQty:100}]
+  }},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:product2.id,quantity:150}
+  ],workerIds:[workerC.id]}},201);
   let editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),150);
-  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day1,items:[
-    {productId:product2.id,quantity:100},
-    {productId:product25.id,quantity:100}
-  ],workerIds:[workerS.id,workerC.id]}},201);
-  editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),100);
   assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),50);
-  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day1,items:[
-    {productId:product2.id,quantity:120},
-    {productId:product25.id,quantity:100}
-  ],workerIds:[workerS.id,workerC.id]}},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:product2.id,quantity:120}
+  ],workerIds:[workerC.id]}},201);
   editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),120);
+  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),20);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:product2.id,quantity:130}
+  ],workerIds:[workerC.id]}},201);
+  editOptions=await must('/api/shipment-options',{token:admin});
   assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),30);
 
   // Critical cross-month payroll scenario: production on the last day of
