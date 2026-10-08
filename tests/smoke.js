@@ -216,9 +216,10 @@ async function must(path, options, expected=200) {
   await must('/api/admin/restore',{token:admin,method:'POST',body:{
     confirm:'RESTORE BUSINESS DATA',backup
   }},201);
-  await must('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}},200);
+  // Force a fresh worker_role_history INSERT after restore; same-day idempotent PATCH would not touch the sequence.
+  await must('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'DELETE'},200);
   const reassigned=await request('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}});
-  assert.equal(reassigned.status,500);
+  assert.equal(reassigned.status,200);
 
   console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive, critical edits, cross-month payroll and backup sequence probe');
 })().catch(error=>{console.error(error);process.exit(1)});
