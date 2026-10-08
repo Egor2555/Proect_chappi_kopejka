@@ -63,7 +63,7 @@ async function must(path, options, expected=200) {
 
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day1,items:[
     {productId:product.id,quantity:3},
-    {productId:editProduct.id,quantity:150},
+    {productId:product2.id,quantity:150},
     {productId:product25.id,quantity:100}
   ],workerIds:[workerS.id,workerC.id]}},201);
   const orders=await must('/api/orders',{token:admin});
