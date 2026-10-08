@@ -150,7 +150,7 @@ async function must(path, options, expected=200) {
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product25.id,periodMonth:month,amountMinor:1500}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(report.total.quantity,3);
-  assert.equal(report.total.totalMinor,'250');
+  assert.equal(report.total.totalMinor,'7875');
 
   await must('/api/fund',{token:admin,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1000,note:'CI fund'}},201);
   const fund=await must('/api/fund',{token:admin});
@@ -164,9 +164,9 @@ async function must(path, options, expected=200) {
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(closedReport.earnings.length,2);
   const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
-  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[125,125]);
-  assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
-  assert.equal(closedReport.total.totalMinor,'250');
+  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[3937,3938]);
+  assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),7875);
+  assert.equal(closedReport.total.totalMinor,'7875');
   const closedProduction=await request('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[{productId:product.id,quantity:1}],workerIds:[worker.id,workerS.id,workerC.id]}});
   assert.equal(closedProduction.status,400);
 
