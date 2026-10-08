@@ -1737,7 +1737,7 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     const tables=RESTORE_ORDER.filter(t=>t!=='users'&&t!=='workers');
     for(const table of tables) for(const row of backup.tables[table]) await insertBackupRow(c,table,row,userIdMap,false);
     // После восстановления явных исторических ID синхронизируем sequence всех BIGSERIAL id.
-    const serialTables=['workers','teams','products','users','team_memberships','worker_role_history','month_states','daily_production_reports','rates','orders','order_items','production_entries','production_allocations','attendance_entries','inventory_movements','shipments','shipment_items','shipment_allocations','payment_entries','monthly_worker_earnings','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
+    const serialTables=['worker_role_history','audit_log','login_log'];
     for(const table of serialTables){
       await c.query("SELECT setval(pg_get_serial_sequence('" + table + "','id'), COALESCE((SELECT MAX(id) FROM " + table + "),1), (SELECT MAX(id) IS NOT NULL FROM " + table + "))");
     }
