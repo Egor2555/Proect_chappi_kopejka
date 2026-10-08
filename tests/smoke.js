@@ -63,7 +63,7 @@ async function must(path, options, expected=200) {
 
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day1,items:[
     {productId:product.id,quantity:3},
-    {productId:product2.id,quantity:150},
+    {productId:editProduct.id,quantity:150},
     {productId:product25.id,quantity:100}
   ],workerIds:[workerS.id,workerC.id]}},201);
   const orders=await must('/api/orders',{token:admin});
@@ -91,21 +91,23 @@ async function must(path, options, expected=200) {
 
   // Critical regression: repeated edit of an unshipped daily report must
   // release the old reservation and expose the released units as free stock.
+  const editProduct=products.find(p=>p.length_mm===1700);
+  assert.ok(editProduct);
   const editOrder=await must('/api/orders',{token:admin,method:'POST',body:{
     orderNumber:'CI-EDIT',title:'CI edit reservation',priority:3,
-    items:[{productId:product2.id,requiredQty:100}]
+    items:[{productId:editProduct.id,requiredQty:100}]
   }},201);
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
     {productId:product2.id,quantity:150}
   ],workerIds:[workerC.id]}},201);
   let editOptions=await must('/api/shipment-options',{token:admin});
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
-    {productId:product2.id,quantity:120}
+    {productId:editProduct.id,quantity:120}
   ],workerIds:[workerC.id]}},201);
   editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),20);
+  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(editProduct.id)).available),20);
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
-    {productId:product2.id,quantity:130}
+    {productId:editProduct.id,quantity:130}
   ],workerIds:[workerC.id]}},201);
   editOptions=await must('/api/shipment-options',{token:admin});
   assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),30);
