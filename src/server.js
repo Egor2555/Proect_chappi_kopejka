@@ -710,9 +710,12 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
         const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1 ORDER BY created_at DESC,id DESC',[oldEntry.id])).rows;
         for(const movement of movements){
           const reverse=-Number(movement.quantity_delta);
+          const reverseReferenceId=movement.movement_type==='production_in'||movement.movement_type==='surplus_transfer'
+            ? movement.id
+            : movement.reference_id;
           await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
             VALUES($1,$2,$3,$4,$5,$6,$7,'Сторно при редактировании дневного отчёта')`,
-            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id,movement.order_id,movement.reference_id,req.user.sub]);
+            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id,movement.order_id,reverseReferenceId,req.user.sub]);
         }
         await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id]);
         for(const orderId of affectedOrders){
@@ -1154,15 +1157,15 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
       COALESCE(SUM(GREATEST(0,
         m.quantity_delta
+        +COALESCE((
+          SELECT SUM(a.quantity_delta)
+          FROM inventory_movements a
+          WHERE a.reference_id=m.id AND a.movement_type IN ('adjustment_in','adjustment_out')
+        ),0)
         -COALESCE((
           SELECT SUM(sa.quantity)
           FROM shipment_allocations sa
           WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL
-        ),0)
-        -COALESCE((
-          SELECT SUM(-r.quantity_delta)
-          FROM inventory_movements r
-          WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id
         ),0)
       )),0)::int available
     FROM products p
@@ -1170,7 +1173,7 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       ON m.product_id=p.id
      AND (
        m.movement_type IN ('production_in','surplus_transfer')
-       OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL)
+       OR (m.movement_type='adjustment_in' AND m.reference_id IS NULL)
      )
      AND m.quantity_delta>0
     WHERE p.active=true
@@ -1263,11 +1266,12 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
       if(left<=0) return 0;
       const batches=(await c.query(`SELECT m.id,m.production_entry_id,
           (m.quantity_delta
-           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
-           -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+           +COALESCE((SELECT SUM(a.quantity_delta) FROM inventory_movements a
+             WHERE a.reference_id=m.id AND a.movement_type IN ('adjustment_in','adjustment_out')),0)
+           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0))::int AS available
         FROM inventory_movements m
         WHERE m.product_id=$1 AND (m.movement_type IN ('production_in','surplus_transfer')
-            OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
+            OR (m.movement_type='adjustment_in' AND m.reference_id IS NULL))
           AND m.quantity_delta>0 ORDER BY m.created_at,m.id FOR UPDATE`,[productId])).rows;
       for(const batch of batches){
         if(left<=0) break;
