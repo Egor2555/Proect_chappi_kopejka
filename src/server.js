@@ -245,14 +245,27 @@ async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
   if (!columns.length) return;
   if (columns.some(column => !/^[a-z_][a-z0-9_]*$/.test(column)))
     throw new Error('Недопустимое имя поля в backup: ' + table);
-  const placeholders = columns.map((_, i) => '$' + (i + 1)).join(',');
-  const values = columns.map(column => mapped[column]);
+  const jsonbColumns = new Set(
+    table === 'audit_log' ? ['before_data','after_data'] :
+    table === 'monthly_closures' ? ['totals'] :
+    table === 'penny_events' ? ['allocation'] :
+    table === 'monthly_worker_earnings' ? ['daily_details'] : []
+  );
+  const values = columns.map(column => jsonbColumns.has(column)
+    ? (mapped[column] == null ? null : (typeof mapped[column] === 'string' ? mapped[column] : JSON.stringify(mapped[column])))
+    : mapped[column]);
+  const placeholders = columns.map((column, i) => '$' + (i + 1) + (jsonbColumns.has(column) ? '::jsonb' : '')).join(',');
   let sql = 'INSERT INTO ' + table + '(' + columns.join(',') + ') VALUES(' + placeholders + ')';
   if (upsert) {
     const updates = columns.filter(column => column !== 'id').map(column => column + '=EXCLUDED.' + column);
     if (updates.length) sql += ' ON CONFLICT(id) DO UPDATE SET ' + updates.join(',');
   }
-  await client.query(sql, values);
+  try {
+    await client.query(sql, values);
+  } catch (err) {
+    err.message = `Backup restore failed in ${table}: ${err.message}`;
+    throw err;
+  }
 }
 
 app.get('/api/health', asyncRoute(async (_req,res) => {
@@ -710,9 +723,12 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
         const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1 ORDER BY created_at DESC,id DESC',[oldEntry.id])).rows;
         for(const movement of movements){
           const reverse=-Number(movement.quantity_delta);
-          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
-            VALUES($1,$2,$3,$4,$5,$6,'Сторно при редактировании дневного отчёта')`,
-            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id, movement.order_id,req.user.sub]);
+          const reverseReferenceId=movement.movement_type==='production_in'||movement.movement_type==='surplus_transfer'
+            ? movement.id
+            : movement.reference_id;
+          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+            VALUES($1,$2,$3,$4,$5,$6,$7,'Сторно при редактировании дневного отчёта')`,
+            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id,movement.order_id,reverseReferenceId,req.user.sub]);
         }
         await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id]);
         for(const orderId of affectedOrders){
@@ -1154,15 +1170,15 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
       COALESCE(SUM(GREATEST(0,
         m.quantity_delta
+        +COALESCE((
+          SELECT SUM(a.quantity_delta)
+          FROM inventory_movements a
+          WHERE a.reference_id=m.id AND a.movement_type IN ('adjustment_in','adjustment_out')
+        ),0)
         -COALESCE((
           SELECT SUM(sa.quantity)
           FROM shipment_allocations sa
           WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL
-        ),0)
-        -COALESCE((
-          SELECT SUM(-r.quantity_delta)
-          FROM inventory_movements r
-          WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id
         ),0)
       )),0)::int available
     FROM products p
@@ -1170,7 +1186,7 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       ON m.product_id=p.id
      AND (
        m.movement_type IN ('production_in','surplus_transfer')
-       OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL)
+       OR (m.movement_type='adjustment_in' AND m.reference_id IS NULL)
      )
      AND m.quantity_delta>0
     WHERE p.active=true
@@ -1263,11 +1279,12 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
       if(left<=0) return 0;
       const batches=(await c.query(`SELECT m.id,m.production_entry_id,
           (m.quantity_delta
-           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0)
-           -COALESCE((SELECT SUM(-r.quantity_delta) FROM inventory_movements r WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id),0))::int AS available
+           +COALESCE((SELECT SUM(a.quantity_delta) FROM inventory_movements a
+             WHERE a.reference_id=m.id AND a.movement_type IN ('adjustment_in','adjustment_out')),0)
+           -COALESCE((SELECT SUM(sa.quantity) FROM shipment_allocations sa WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL),0))::int AS available
         FROM inventory_movements m
         WHERE m.product_id=$1 AND (m.movement_type IN ('production_in','surplus_transfer')
-            OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL))
+            OR (m.movement_type='adjustment_in' AND m.reference_id IS NULL))
           AND m.quantity_delta>0 ORDER BY m.created_at,m.id FOR UPDATE`,[productId])).rows;
       for(const batch of batches){
         if(left<=0) break;
@@ -1719,7 +1736,11 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     for(const worker of backup.tables.workers) await insertBackupRow(c,'workers',worker,userIdMap,true);
     const tables=RESTORE_ORDER.filter(t=>t!=='users'&&t!=='workers');
     for(const table of tables) for(const row of backup.tables[table]) await insertBackupRow(c,table,row,userIdMap,false);
-    await c.query("SELECT setval(pg_get_serial_sequence('audit_log','id'), COALESCE((SELECT MAX(id) FROM audit_log),1), (SELECT MAX(id) IS NOT NULL FROM audit_log))");
+    // После восстановления явных исторических ID синхронизируем sequence всех BIGSERIAL id.
+    const serialTables=['worker_role_history','audit_log','login_log'];
+    for(const table of serialTables){
+      await c.query("SELECT setval(pg_get_serial_sequence('" + table + "','id'), COALESCE((SELECT MAX(id) FROM " + table + "),1), (SELECT MAX(id) IS NOT NULL FROM " + table + "))");
+    }
     await c.query("SELECT setval(pg_get_serial_sequence('login_log','id'), COALESCE((SELECT MAX(id) FROM login_log),1), (SELECT MAX(id) IS NOT NULL FROM login_log))");
     // Chappi Edition has exactly one active brigade. A backup may come from
     // an older version with several teams, so restore the history but normalize
