@@ -222,3 +222,4 @@ async function must(path, options, expected=200) {
 
   console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive, critical edits, cross-month payroll and backup sequence probe');
 })().catch(error=>{console.error(error);process.exit(1)});
+
