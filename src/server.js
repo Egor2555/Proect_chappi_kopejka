@@ -252,7 +252,12 @@ async function insertBackupRow(client, table, row, userIdMap, upsert=false) {
     const updates = columns.filter(column => column !== 'id').map(column => column + '=EXCLUDED.' + column);
     if (updates.length) sql += ' ON CONFLICT(id) DO UPDATE SET ' + updates.join(',');
   }
-  await client.query(sql, values);
+  try {
+    await client.query(sql, values);
+  } catch (err) {
+    err.message = `Backup restore failed in ${table}: ${err.message}`;
+    throw err;
+  }
 }
 
 app.get('/api/health', asyncRoute(async (_req,res) => {
