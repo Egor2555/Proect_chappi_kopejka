@@ -110,7 +110,7 @@ async function must(path, options, expected=200) {
     {productId:editProduct.id,quantity:130}
   ],workerIds:[workerC.id]}},201);
   editOptions=await must('/api/shipment-options',{token:admin});
-  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),30);
+  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(editProduct.id)).available),30);
 
   // Critical cross-month payroll scenario: production on the last day of
   // the previous calendar month is shipped in the current month and must be
