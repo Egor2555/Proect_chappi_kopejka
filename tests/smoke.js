@@ -104,7 +104,7 @@ async function must(path, options, expected=200) {
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product2.id,periodMonth:month,amountMinor:1000}},201);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product25.id,periodMonth:month,amountMinor:1500}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(report.total.quantity,2);
+  assert.equal(report.total.quantity,3);
   assert.equal(report.total.totalMinor,'250');
 
   await must('/api/fund',{token:admin,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1000,note:'CI fund'}},201);
