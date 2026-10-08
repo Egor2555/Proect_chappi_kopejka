@@ -146,7 +146,10 @@ async function must(path, options, expected=200) {
   assert.equal(productionHistory.length,3);
   await must('/api/month/close',{token:brigadier,method:'POST',body:{month:today.slice(0,7)}},201);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.deepEqual(beforeRates.missingRates.map(x=>({length_label:x.length_label,section_width_mm:Number(x.section_width_mm),section_height_mm:Number(x.section_height_mm)})),[{length_label:'1.5метра',section_width_mm:60,section_height_mm:40}]);
+  assert.deepEqual(beforeRates.missingRates.map(x=>({length_label:x.length_label,section_width_mm:Number(x.section_width_mm),section_height_mm:Number(x.section_height_mm)})),[
+    {length_label:'1.5метра',section_width_mm:60,section_height_mm:40},
+    {length_label:'2.5метра',section_width_mm:60,section_height_mm:60}
+  ]);
   assert.equal(beforeRates.total.quantity,2);
   const rateEligibility=await request('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}});
   assert.equal(rateEligibility.status,201,JSON.stringify(rateEligibility.data));
