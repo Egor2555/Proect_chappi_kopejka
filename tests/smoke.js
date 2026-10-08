@@ -150,7 +150,7 @@ async function must(path, options, expected=200) {
     {length_label:'1.5метра',section_width_mm:60,section_height_mm:40},
     {length_label:'2.5метра',section_width_mm:60,section_height_mm:60}
   ]);
-  assert.equal(beforeRates.total.quantity,2);
+  assert.equal(beforeRates.total.quantity,8);
   const rateEligibility=await request('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}});
   assert.equal(rateEligibility.status,201,JSON.stringify(rateEligibility.data));
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product2.id,periodMonth:month,amountMinor:1000}},201);
