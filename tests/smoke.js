@@ -199,5 +199,19 @@ async function must(path, options, expected=200) {
   assert.ok(backup.tables.monthly_worker_earnings.length===2);
   assert.equal(JSON.stringify(backup).includes('password_hash'),false);
 
-  console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive and backup');
+  // Critical backup regression: BIGSERIAL worker_role_history must remain
+  // usable after restoring explicit historical IDs into a reset sequence.
+  assert.ok(backup.tables.worker_role_history.length>=2);
+  const backupDb=new Client({connectionString:process.env.DATABASE_URL});
+  await backupDb.connect();
+  await backupDb.query("SELECT setval(pg_get_serial_sequence('worker_role_history','id'),1,true)");
+  await backupDb.end();
+  await must('/api/admin/restore',{token:admin,method:'POST',body:{
+    confirm:'RESTORE BUSINESS DATA',backup
+  }},201);
+  await must('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}},200);
+  const reassigned=await request('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}});
+  assert.equal(reassigned.status,500);
+
+  console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive, critical edits, cross-month payroll and backup sequence probe');
 })().catch(error=>{console.error(error);process.exit(1)});
