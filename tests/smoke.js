@@ -108,6 +108,32 @@ async function must(path, options, expected=200) {
   assert.equal(Number(editOptions.orderItems.find(x=>String(x.productId)===String(product2.id)).available),120);
   assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(product2.id)).available),30);
 
+  // Critical cross-month payroll scenario: production on the last day of
+  // the previous calendar month is shipped in the current month and must be
+  // included when the current month is finally closed.
+  const crossDay=new Date(month+'T00:00:00Z');
+  crossDay.setUTCDate(crossDay.getUTCDate()-1);
+  const crossDate=crossDay.toISOString().slice(0,10);
+  const crossDb=new Client({connectionString:process.env.DATABASE_URL});
+  await crossDb.connect();
+  await crossDb.query("INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,'brigadier',$2::date) ON CONFLICT DO NOTHING",[workerB.id,crossDate]);
+  for(const w of [workerS,workerC])
+    await crossDb.query("INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3::date)",[w.id,team.id,crossDate]);
+  await crossDb.end();
+
+  const crossOrder=await must('/api/orders',{token:admin,method:'POST',body:{
+    orderNumber:'CI-CROSS',title:'CI cross-month order',priority:3,
+    items:[{productId:product25.id,requiredQty:5}]
+  }},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{
+    workDate:crossDate,items:[{productId:product25.id,quantity:5}],
+    workerIds:[workerS.id,workerC.id]
+  }},201);
+  const crossShipment=await must('/api/shipments',{token:brigadier,method:'POST',body:{
+    items:[{productId:product25.id,quantity:5}]
+  }},201);
+  assert.equal(String(crossShipment.payroll_month).slice(0,10),month);
+
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[
     {productId:product2.id,quantity:150},
     {productId:product25.id,quantity:50}
