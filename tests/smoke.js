@@ -89,6 +89,55 @@ async function must(path, options, expected=200) {
   const payments=await must('/api/payments',{token:admin});
   assert.equal(payments.length,1);
 
+  // Critical regression: repeated edit of an unshipped daily report must
+  // release the old reservation and expose the released units as free stock.
+  const editProduct=products.find(p=>p.length_mm===1700);
+  assert.ok(editProduct);
+  const editOrder=await must('/api/orders',{token:admin,method:'POST',body:{
+    orderNumber:'CI-EDIT',title:'CI edit reservation',priority:3,
+    items:[{productId:editProduct.id,requiredQty:100}]
+  }},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:product2.id,quantity:150}
+  ],workerIds:[workerC.id]}},201);
+  let editOptions=await must('/api/shipment-options',{token:admin});
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:editProduct.id,quantity:120}
+  ],workerIds:[workerC.id]}},201);
+  editOptions=await must('/api/shipment-options',{token:admin});
+  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(editProduct.id)).available),20);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:day2,items:[
+    {productId:editProduct.id,quantity:130}
+  ],workerIds:[workerC.id]}},201);
+  editOptions=await must('/api/shipment-options',{token:admin});
+  assert.equal(Number(editOptions.stockItems.find(x=>String(x.product_id)===String(editProduct.id)).available),30);
+
+  // Critical cross-month payroll scenario: production on the last day of
+  // the previous calendar month is shipped in the current month and must be
+  // included when the current month is finally closed.
+  const crossDay=new Date(month+'T00:00:00Z');
+  crossDay.setUTCDate(crossDay.getUTCDate()-1);
+  const crossDate=crossDay.toISOString().slice(0,10);
+  const crossDb=new Client({connectionString:process.env.DATABASE_URL});
+  await crossDb.connect();
+  await crossDb.query("INSERT INTO worker_role_history(worker_id,role,valid_from) VALUES($1,'brigadier',$2::date) ON CONFLICT DO NOTHING",[workerB.id,crossDate]);
+  for(const w of [workerS,workerC])
+    await crossDb.query("INSERT INTO team_memberships(worker_id,team_id,valid_from) VALUES($1,$2,$3::date)",[w.id,team.id,crossDate]);
+  await crossDb.end();
+
+  const crossOrder=await must('/api/orders',{token:admin,method:'POST',body:{
+    orderNumber:'CI-CROSS',title:'CI cross-month order',priority:3,
+    items:[{productId:product25.id,requiredQty:5}]
+  }},201);
+  await must('/api/daily-reports',{token:brigadier,method:'POST',body:{
+    workDate:crossDate,items:[{productId:product25.id,quantity:5}],
+    workerIds:[workerS.id,workerC.id]
+  }},201);
+  const crossShipment=await must('/api/shipments',{token:brigadier,method:'POST',body:{
+    items:[{productId:product25.id,quantity:5}]
+  }},201);
+  assert.equal(String(crossShipment.payroll_month).slice(0,10),month);
+
   await must('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[
     {productId:product2.id,quantity:150},
     {productId:product25.id,quantity:50}
@@ -97,15 +146,18 @@ async function must(path, options, expected=200) {
   assert.equal(productionHistory.length,3);
   await must('/api/month/close',{token:brigadier,method:'POST',body:{month:today.slice(0,7)}},201);
   const beforeRates=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.deepEqual(beforeRates.missingRates.map(x=>({length_label:x.length_label,section_width_mm:Number(x.section_width_mm),section_height_mm:Number(x.section_height_mm)})),[{length_label:'1.5метра',section_width_mm:60,section_height_mm:40}]);
-  assert.equal(beforeRates.total.quantity,2);
+  assert.deepEqual(beforeRates.missingRates.map(x=>({length_label:x.length_label,section_width_mm:Number(x.section_width_mm),section_height_mm:Number(x.section_height_mm)})),[
+    {length_label:'1.5метра',section_width_mm:60,section_height_mm:40},
+    {length_label:'2.5метра',section_width_mm:60,section_height_mm:60}
+  ]);
+  assert.equal(beforeRates.total.quantity,8);
   const rateEligibility=await request('/api/rates',{token:admin,method:'POST',body:{productId:product.id,periodMonth:month,amountMinor:125}});
   assert.equal(rateEligibility.status,201,JSON.stringify(rateEligibility.data));
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product2.id,periodMonth:month,amountMinor:1000}},201);
   await must('/api/rates',{token:admin,method:'POST',body:{productId:product25.id,periodMonth:month,amountMinor:1500}},201);
   const report=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
-  assert.equal(report.total.quantity,2);
-  assert.equal(report.total.totalMinor,'250');
+  assert.equal(report.total.quantity,8);
+  assert.equal(report.total.totalMinor,'7875');
 
   await must('/api/fund',{token:admin,method:'POST',body:{entryDate:today,entryType:'income',amountMinor:1000,note:'CI fund'}},201);
   const fund=await must('/api/fund',{token:admin});
@@ -119,9 +171,9 @@ async function must(path, options, expected=200) {
   const closedReport=await must('/api/reports/monthly?month='+today.slice(0,7),{token:admin});
   assert.equal(closedReport.earnings.length,2);
   const earned=Object.fromEntries(closedReport.earnings.map(x=>[x.worker_id,x.amount_minor]));
-  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[125,125]);
-  assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),250);
-  assert.equal(closedReport.total.totalMinor,'250');
+  assert.deepEqual(Object.values(earned).map(Number).sort((a,b)=>a-b),[3937,3938]);
+  assert.equal(Object.values(earned).reduce((sum,x)=>sum+Number(x),0),7875);
+  assert.equal(closedReport.total.totalMinor,'7875');
   const closedProduction=await request('/api/daily-reports',{token:brigadier,method:'POST',body:{workDate:today,items:[{productId:product.id,quantity:1}],workerIds:[worker.id,workerS.id,workerC.id]}});
   assert.equal(closedProduction.status,400);
 
@@ -154,5 +206,21 @@ async function must(path, options, expected=200) {
   assert.ok(backup.tables.monthly_worker_earnings.length===2);
   assert.equal(JSON.stringify(backup).includes('password_hash'),false);
 
-  console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive and backup');
+  // Critical backup regression: BIGSERIAL worker_role_history must remain
+  // usable after restoring explicit historical IDs into a reset sequence.
+  assert.ok(backup.tables.worker_role_history.length>=2);
+  const backupDb=new Client({connectionString:process.env.DATABASE_URL});
+  await backupDb.connect();
+  await backupDb.query("SELECT setval(pg_get_serial_sequence('worker_role_history','id'),1,true)");
+  await backupDb.end();
+  await must('/api/admin/restore',{token:admin,method:'POST',body:{
+    confirm:'RESTORE BUSINESS DATA',backup
+  }},201);
+  // Force a fresh worker_role_history INSERT after restore; same-day idempotent PATCH would not touch the sequence.
+  await must('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'DELETE'},200);
+  const reassigned=await request('/api/workers/'+workerB.id+'/brigadier',{token:admin,method:'PATCH',body:{}});
+  assert.equal(reassigned.status,200);
+
+  console.log('SMOKE TEST PASSED: auth, roles, rates, orders, surplus, stock, shipment, payment, report, fund, close, archive, critical edits, cross-month payroll and backup sequence probe');
 })().catch(error=>{console.error(error);process.exit(1)});
+
