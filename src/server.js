@@ -1128,8 +1128,9 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       WHERE si.order_id=o.id AND si.product_id=i.product_id
     ) sh ON true
     WHERE o.status IN ('active','queued','completed')
-    ORDER BY CASE WHEN o.status='active' THEN 0 WHEN o.status='queued' THEN 1 ELSE 2 END,
-      o.priority DESC,o.created_at ASC,o.id ASC,
+    -- Отгрузка не зависит от статуса: сначала самый ранний заказ,
+      -- затем следующий. Так первый заказ закрывается первым.
+      ORDER BY o.created_at ASC,o.id ASC,
       p.section_width_mm,p.section_height_mm,p.length_mm
   `);
   const byProduct=new Map();
@@ -1296,8 +1297,8 @@ app.post('/api/shipments', auth, roles('brigadier'), asyncRoute(async (req,res) 
           SELECT SUM(quantity)::int produced FROM production_allocations
           WHERE order_id=o.id AND product_id=i.product_id AND voided_at IS NULL
         ) prod ON true
-        ORDER BY CASE WHEN o.status='active' THEN 0 WHEN o.status='queued' THEN 1 ELSE 2 END,
-          o.priority DESC,o.created_at ASC,o.id ASC
+        -- Отгрузка всегда идёт по очереди заказов, а не по текущему статусу.
+        ORDER BY o.created_at ASC,o.id ASC
       `,[item.productId])).rows;
 
       let left=item.quantity;
