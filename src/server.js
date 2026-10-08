@@ -1146,11 +1146,33 @@ app.get('/api/shipment-options', auth, roles('admin','brigadier'), asyncRoute(as
       length_m:x.length_m,length_label:x.length_label,available:0});
     byProduct.get(key).available+=available;
   }
+  // Показываем только действительно свободный складской остаток:
+  // зарезервированные заказы и уже использованные свободные партии исключаются
+  // той же логикой, что и фактическая отгрузка ниже.
   const stockRows=await pool.query(`
     SELECT p.id product_id,p.section_width_mm,p.section_height_mm,p.length_mm/1000.0 AS length_m,
       COALESCE(NULLIF(p.length_label,''),(p.length_mm/1000.0)::text || 'метра') AS length_label,
-      GREATEST(0,COALESCE(SUM(m.quantity_delta),0))::int available
-    FROM products p LEFT JOIN inventory_movements m ON m.product_id=p.id
+      COALESCE(SUM(GREATEST(0,
+        m.quantity_delta
+        -COALESCE((
+          SELECT SUM(sa.quantity)
+          FROM shipment_allocations sa
+          WHERE sa.inventory_movement_id=m.id AND sa.reservation_movement_id IS NULL
+        ),0)
+        -COALESCE((
+          SELECT SUM(-r.quantity_delta)
+          FROM inventory_movements r
+          WHERE r.movement_type='adjustment_out' AND r.reference_id=m.id
+        ),0)
+      )),0)::int available
+    FROM products p
+    LEFT JOIN inventory_movements m
+      ON m.product_id=p.id
+     AND (
+       m.movement_type IN ('production_in','surplus_transfer')
+       OR (m.movement_type='adjustment_in' AND m.reference_id IS NOT NULL)
+     )
+     AND m.quantity_delta>0
     WHERE p.active=true
     GROUP BY p.id ORDER BY p.section_width_mm,p.section_height_mm,p.length_mm
   `);
