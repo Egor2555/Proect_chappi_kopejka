@@ -710,9 +710,9 @@ app.post('/api/daily-reports', auth, roles('brigadier'), asyncRoute(async (req,r
         const movements=(await c.query('SELECT * FROM inventory_movements WHERE production_entry_id=$1 ORDER BY created_at DESC,id DESC',[oldEntry.id])).rows;
         for(const movement of movements){
           const reverse=-Number(movement.quantity_delta);
-          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,created_by,note)
-            VALUES($1,$2,$3,$4,$5,$6,'Сторно при редактировании дневного отчёта')`,
-            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id, movement.order_id,req.user.sub]);
+          await c.query(`INSERT INTO inventory_movements(product_id,movement_type,quantity_delta,production_entry_id,order_id,reference_id,created_by,note)
+            VALUES($1,$2,$3,$4,$5,$6,$7,'Сторно при редактировании дневного отчёта')`,
+            [movement.product_id,reverse>0?'adjustment_in':'adjustment_out',reverse,oldEntry.id,movement.order_id,movement.reference_id,req.user.sub]);
         }
         await c.query('UPDATE production_allocations SET voided_at=now() WHERE production_entry_id=$1 AND voided_at IS NULL',[oldEntry.id]);
         for(const orderId of affectedOrders){
