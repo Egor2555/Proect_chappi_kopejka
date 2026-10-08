@@ -1736,7 +1736,11 @@ app.post('/api/admin/restore', auth, roles('admin'), asyncRoute(async (req,res) 
     for(const worker of backup.tables.workers) await insertBackupRow(c,'workers',worker,userIdMap,true);
     const tables=RESTORE_ORDER.filter(t=>t!=='users'&&t!=='workers');
     for(const table of tables) for(const row of backup.tables[table]) await insertBackupRow(c,table,row,userIdMap,false);
-    await c.query("SELECT setval(pg_get_serial_sequence('audit_log','id'), COALESCE((SELECT MAX(id) FROM audit_log),1), (SELECT MAX(id) IS NOT NULL FROM audit_log))");
+    // После восстановления явных исторических ID синхронизируем sequence всех BIGSERIAL id.
+    const serialTables=['workers','teams','products','users','team_memberships','worker_role_history','month_states','daily_production_reports','rates','orders','order_items','production_entries','production_allocations','attendance_entries','inventory_movements','shipments','shipment_items','shipment_allocations','payment_entries','monthly_worker_earnings','monthly_closures','penny_events','fund_entries','audit_log','login_log'];
+    for(const table of serialTables){
+      await c.query("SELECT setval(pg_get_serial_sequence('" + table + "','id'), COALESCE((SELECT MAX(id) FROM " + table + "),1), (SELECT MAX(id) IS NOT NULL FROM " + table + "))");
+    }
     await c.query("SELECT setval(pg_get_serial_sequence('login_log','id'), COALESCE((SELECT MAX(id) FROM login_log),1), (SELECT MAX(id) IS NOT NULL FROM login_log))");
     // Chappi Edition has exactly one active brigade. A backup may come from
     // an older version with several teams, so restore the history but normalize
