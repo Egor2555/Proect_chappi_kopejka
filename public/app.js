@@ -129,6 +129,7 @@ async function boot(){
   }
 }
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
+function shipmentOptionLabel(value){const label=String(value??'');return label.replace(/^(\d+×\d+\s+)(\d+\.\d{4,})\s*метра$/,(_,section,length)=>{const normalized=Number(length).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');return section+normalized+' метра'})}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';const s=Number(n.toFixed(3)).toString().replace('.',',');return s+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}
 function normalizeLengthLabel(v){const s=String(v??'').trim();if(!s)return '';const m=s.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(?:метр(?:а|ов)?|м)?$/i);if(m){const n=Number(String(m[1]).replace(',','.'));if(Number.isFinite(n)){const num=n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'').replace('.',',');return num+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}}return s.replace(/\s+/g,' ').trim()}
@@ -464,7 +465,7 @@ async function shipments(){
        section.innerHTML='<h3>Заказная продукция</h3><p class="muted">Количество объединено по всем готовым заказам. При сохранении система сама распределит отгрузку по очереди заказов.</p>';
        for(const x of orderItems){
          const row=document.createElement('div');row.className='row shipmentItem';row.dataset.source='orders';
-         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>Доступно: '+x.available+' шт. · заказы распределятся автоматически</small>';
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(shipmentOptionLabel(x.label))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>Доступно: '+x.available+' шт. · заказы распределятся автоматически</small>';
          section.append(row);
        }
        box.append(section);
@@ -475,7 +476,7 @@ async function shipments(){
        for(const x of stockItems){
          const row=document.createElement('div');row.className='row shipmentItem';row.dataset.source='warehouse';
          const productId=x.productId||x.product_id||'';
-         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+escapeHtml(productId)+'">'+escapeHtml(x.label)+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+escapeHtml(productId)+'">'+escapeHtml(shipmentOptionLabel(x.label))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
          warehouse.append(row);
        }
        box.append(warehouse);
