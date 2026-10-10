@@ -129,7 +129,7 @@ async function boot(){
   }
 }
 async function loadBase(){[state.products,state.teams,state.workers,state.orders]=await Promise.all([api('/products'),api('/teams'),api('/workers'),api('/orders')])}
-function shipmentOptionLabel(value){const label=String(value??'');return label.replace(/^(\d+×\d+\s+)(\d+\.\d{4,})метра$/,(_,section,length)=>{const normalized=Number(length).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');return section+normalized+'метра'})}
+function shipmentOptionLabel(value){const label=String(value??'');return label.replace(/^(\d+×\d+\s+)(\d+\.\d{4,})\s*метра$/,(_,section,length)=>{const normalized=Number(length).toFixed(3).replace(/0+$/,'').replace(/\.$/,'');return section+normalized+' метра'})}
 function formatMeters(v){const n=Number(v);if(!Number.isFinite(n))return '';return String(Number(n.toFixed(3)))}
 function formatLength(v){const n=Number(v);if(!Number.isFinite(n))return '';const s=Number(n.toFixed(3)).toString().replace('.',',');return s+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}
 function normalizeLengthLabel(v){const s=String(v??'').trim();if(!s)return '';const m=s.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(?:метр(?:а|ов)?|м)?$/i);if(m){const n=Number(String(m[1]).replace(',','.'));if(Number.isFinite(n)){const num=n.toFixed(3).replace(/0+$/,'').replace(/\.$/,'').replace('.',',');return num+' '+(Math.abs(n-1)<1e-9?'метр':'метра')}}return s.replace(/\s+/g,' ').trim()}
