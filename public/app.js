@@ -465,7 +465,7 @@ async function shipments(){
        section.innerHTML='<h3>Заказная продукция</h3><p class="muted">Количество объединено по всем готовым заказам. При сохранении система сама распределит отгрузку по очереди заказов.</p>';
        for(const x of orderItems){
          const row=document.createElement('div');row.className='row shipmentItem';row.dataset.source='orders';
-         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(shipmentOptionLabel(x.label,x))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>Доступно: '+x.available+' шт. · заказы распределятся автоматически</small>';
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+x.productId+'">'+escapeHtml(shipmentOptionLabel(x.label,x))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" placeholder="Количество" required></label><small>Доступно: '+x.available+' шт. · заказы распределятся автоматически</small>';
          section.append(row);
        }
        box.append(section);
@@ -476,7 +476,7 @@ async function shipments(){
        for(const x of stockItems){
          const row=document.createElement('div');row.className='row shipmentItem';row.dataset.source='warehouse';
          const productId=x.productId||x.product_id||'';
-         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+escapeHtml(productId)+'">'+escapeHtml(shipmentOptionLabel(x.label,x))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" value="0" required></label><small>На складе: '+x.available+' шт.</small>';
+         row.innerHTML='<label>Типоразмер<select name="productId"><option value="'+escapeHtml(productId)+'">'+escapeHtml(shipmentOptionLabel(x.label,x))+'</option></select></label><label>Количество<input name="quantity" type="number" min="0" max="'+x.available+'" placeholder="Количество" required></label><small>На складе: '+x.available+' шт.</small>';
          warehouse.append(row);
        }
        box.append(warehouse);
