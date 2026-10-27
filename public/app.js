@@ -116,6 +116,7 @@ async function boot(){
   document.querySelectorAll('[data-admin-only]').forEach(x=>x.hidden=state.user.role!=='admin');
   document.querySelectorAll('[data-hide-admin]').forEach(x=>x.hidden=state.user.role==='admin');
   document.querySelectorAll('[data-hide-brigadier]').forEach(x=>x.hidden=state.user.role==='brigadier');
+  document.querySelectorAll('[data-hide-worker]').forEach(x=>x.hidden=state.user.role==='worker');
   document.querySelectorAll('[data-finance]').forEach(x=>x.hidden=!['admin','brigadier'].includes(state.user.role));
   try{
     await loadBase();
